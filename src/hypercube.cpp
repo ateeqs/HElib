@@ -1,21 +1,36 @@
-/* Copyright (C) 2012,2013 IBM Corp.
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation; either version 2 of the License, or
- * (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
- * See the GNU General Public License for more details.
- * 
- * You should have received a copy of the GNU General Public License along
- * with this program; if not, write to the Free Software Foundation, Inc.,
- * 59 Temple Place, Suite 330, Boston, MA 02111-1307 USA
+/* Copyright (C) 2012-2017 IBM Corp.
+ * This program is Licensed under the Apache License, Version 2.0
+ * (the "License"); you may not use this file except in compliance
+ * with the License. You may obtain a copy of the License at
+ *   http://www.apache.org/licenses/LICENSE-2.0
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License. See accompanying LICENSE file.
  */
 #include "hypercube.h"
 #include <iomanip>
 
+NTL_CLIENT
+
+  //! Break an index into the hypercube to index of the
+  //! dimension-dim subcube and index inside that subcube.
+std::pair<long,long> CubeSignature::breakIndexByDim(long idx, long dim) const
+{
+  std::pair<long,long> ans;
+  ans.first = (idx%prods[dim+1]) + (idx/prods[dim])*prods[dim+1];
+  ans.second = (idx % prods[dim]) / prods[dim+1];
+  return ans;
+}
+
+   //! The inverse of breakIndexByDim
+long CubeSignature::assembleIndexByDim(std::pair<long,long> idx, long dim) const
+{
+  long third = idx.first % prods[dim+1];
+  idx.first = (idx.first - third) * dims[dim];
+  return idx.first + idx.second*prods[dim+1] + third;
+}
 
 // Rotate k positions along the d'th dimension: The content of slot j that has
 // coordinate j_d in the d'th dimension is moved to j' that has coordinates the
@@ -24,7 +39,8 @@
 template<class T>
 void HyperCube<T>::rotate1D(long d, long k)
 {
-  assert(d >=0 && d < getNumDims());
+  //OLD: assert(d >=0 && d < getNumDims());
+  helib::assertInRange(d, 0l, getNumDims(), "d must be between 0 and number of dimensions", true);
 
   // Make sure rotation amount is in the range [1,dimSize-1]
   k %= getDim(d);
@@ -43,7 +59,8 @@ void HyperCube<T>::rotate1D(long d, long k)
 template<class T>
 void HyperCube<T>::shift1D(long d, long k)
 {
-  assert(d >=0 && d < getNumDims());
+  //OLD: assert(d >=0 && d < getNumDims());
+  helib::assertInRange(d, 0l, getNumDims(), "d must be between 0 and number of dimensions");
 
   // Make sure rotation amount is in the range [1,dimSize-1]
   bool negative = (k<0);
@@ -72,10 +89,12 @@ template<class T>
 ConstCubeSlice<T>::ConstCubeSlice(const ConstCubeSlice<T>& bigger, long i,
 				  long dOffset)
 {
-   assert(dOffset >= 0 && dOffset <= bigger.getNumDims()); 
-   // allow zero-dimensional slice
+  //OLD: assert(dOffset >= 0 && dOffset <= bigger.getNumDims()); 
+  helib::assertInRange(dOffset, 0l, bigger.getNumDims(), "dOffset must be between 0 and bigger.getNumDims()", true); 
+  // allow zero-dimensional slice
 
-   assert(i >= 0 && i < bigger.getProd(0, dOffset));
+  //OLD: assert(i >= 0 && i < bigger.getProd(0, dOffset));
+  helib::assertInRange(i, 0l, bigger.getProd(0, dOffset), "i must be between 0 and bigger.getProd(0, dOffset)"); 
 
    data = bigger.data;
    sig = bigger.sig;
@@ -87,8 +106,10 @@ template<class T>
 ConstCubeSlice<T>::ConstCubeSlice(const HyperCube<T>& _cube, long i,
 				  long dOffset)
 {
-   assert(dOffset >= 0 && dOffset <= _cube.getNumDims()); // allow zero-dimensional slice
-   assert(i >= 0 && i < _cube.getProd(0,dOffset));
+  //OLD: assert(dOffset >= 0 && dOffset <= _cube.getNumDims()); // allow zero-dimensional slice
+  helib::assertInRange(dOffset, 0l, _cube.getNumDims(), "dOffset must be non-negative and at most _cube.getNumDims()", true);
+  //OLD: assert(i >= 0 && i < _cube.getProd(0,dOffset));
+  helib::assertInRange(i, 0l, _cube.getProd(0, dOffset), "i must be non-negative and at most _cube.getProd(0, dOffset)");
 
    data = &_cube.getData();
    sig = &_cube.getSig();
@@ -103,7 +124,8 @@ void CubeSlice<T>::copy(const ConstCubeSlice<T>& other) const
    long n = this->getSize();
 
    // we only check that the sizes match
-   assert(n == other.getSize());
+   //OLD: assert(n == other.getSize());
+   helib::assertEq(n, other.getSize(), "Cube sizes do not match");
 
    T *dst = &(*this)[0];
    const T *src = &other[0];
@@ -125,7 +147,8 @@ void getHyperColumn(Vec<T>& v, const ConstCubeSlice<T>& s, long pos)
    long m = s.getProd(1);
    long n = s.getDim(0);
 
-   assert(pos >= 0 && pos < m);
+   //OLD: assert(pos >= 0 && pos < m);
+   helib::assertInRange(pos, 0l, m, "pos must be between 0 and s.getProd(1)");
    v.SetLength(n);
 
    T* vp = &v[0];
@@ -144,7 +167,8 @@ void setHyperColumn(const Vec<T>& v, const CubeSlice<T>& s, long pos)
    long m = s.getProd(1);
    long n = s.getDim(0);
 
-   assert(pos >= 0 && pos < m);
+   //OLD: assert(pos >= 0 && pos < m);
+   helib::assertInRange(pos, 0l, m, "pos must be between 0 and s.getProd(1)");
    if (v.length() < n) n = v.length();
 
    const T* vp = &v[0];
@@ -165,7 +189,8 @@ void setHyperColumn(const Vec<T>& v, const CubeSlice<T>& s, long pos, const T& v
    long n = s.getDim(0);
    long n1 = n;
 
-   assert(pos >= 0 && pos < m);
+   //OLD: assert(pos >= 0 && pos < m);
+   helib::assertInRange(pos, 0l, m, "pos must be between 0 and s.getProd(1)");
    if (v.length() < n) n1 = v.length();
 
    const T* vp = &v[0];
@@ -183,7 +208,8 @@ void setHyperColumn(const Vec<T>& v, const CubeSlice<T>& s, long pos, const T& v
 template<class T>
 void print3D(const HyperCube<T>& c) 
 {
-   assert(c.getNumDims() == 3);
+   //OLD: assert(c.getNumDims() == 3);
+  helib::assertEq(c.getNumDims(), 3l, "Cube must be 3-dimensional for call to print3D");
 
    ConstCubeSlice<T> s0(c);
 

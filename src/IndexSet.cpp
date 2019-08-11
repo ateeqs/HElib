@@ -1,20 +1,17 @@
-/* Copyright (C) 2012,2013 IBM Corp.
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation; either version 2 of the License, or
- * (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
- * See the GNU General Public License for more details.
- * 
- * You should have received a copy of the GNU General Public License along
- * with this program; if not, write to the Free Software Foundation, Inc.,
- * 59 Temple Place, Suite 330, Boston, MA 02111-1307 USA
+/* Copyright (C) 2012-2017 IBM Corp.
+ * This program is Licensed under the Apache License, Version 2.0
+ * (the "License"); you may not use this file except in compliance
+ * with the License. You may obtain a copy of the License at
+ *   http://www.apache.org/licenses/LICENSE-2.0
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License. See accompanying LICENSE file.
  */
 
 #include "IndexSet.h"
+#include "binio.h"
 
 const IndexSet& IndexSet::emptySet()
 {
@@ -24,7 +21,8 @@ const IndexSet& IndexSet::emptySet()
 
 // constructs an interval, low to high
 void IndexSet::intervalConstructor(long low, long high) {
-  assert(low >= 0);
+  //OLD: assert(low >= 0);
+  helib::assertTrue<helib::InvalidArgument>(low >= 0, "Cannot construct interval with negative lower bound");
 
   if (high < low) {
     _first = 0; _last = -1; _card = 0;
@@ -98,7 +96,8 @@ void IndexSet::clear() {
 }
 
 void IndexSet::insert(long j) {
-  assert(j >= 0);
+  //OLD: assert(j >= 0);
+  helib::assertTrue<helib::InvalidArgument>(j >= 0, "Cannot insert in negative index");
 
   long oldSize = rep.size();
   if (j >= oldSize) {
@@ -120,7 +119,8 @@ void IndexSet::insert(long j) {
 }
 
 void IndexSet::remove(long j) {
-  assert(j >= 0);
+  //OLD: assert(j >= 0);
+  helib::assertTrue<helib::InvalidArgument>(j >= 0, "Cannot remove from negative index");
 
   if (j >= (long) rep.size()) return;
   if (rep[j] == false) return;
@@ -226,7 +226,7 @@ bool operator>(const IndexSet& s1, const IndexSet& s2) {
 }
 
 
-ostream& operator << (ostream& str, const IndexSet& set)
+std::ostream& operator << (std::ostream& str, const IndexSet& set)
 {
   if (set.card() == 0) {
     str << "[]";
@@ -256,3 +256,34 @@ istream& operator >> (istream& str, IndexSet& set)
 
   return str;
 }
+
+void IndexSet::write(std::ostream& str) const 
+{
+  // Size of Set
+  write_raw_int(str, this->card());
+ 
+  // The data itself
+  for(long n = this->first();
+       n <= this->last(); 
+       n = this->next(n)){
+    write_raw_int(str, n);
+  }
+
+}
+
+void IndexSet::read(istream& str)
+{
+  // Size of Set
+  long sizeOfS = read_raw_int(str); 
+
+  // insert all these indexes into the set
+  this->clear();
+
+  // The data itself
+  for(long i=0, n; i<sizeOfS; i++){     
+    n = read_raw_int(str); 
+    this->insert(n);  
+  }
+  
+}
+

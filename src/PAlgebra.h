@@ -1,21 +1,16 @@
-
-/* Copyright (C) 2012,2013 IBM Corp.
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation; either version 2 of the License, or
- * (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
- * See the GNU General Public License for more details.
- * 
- * You should have received a copy of the GNU General Public License along
- * with this program; if not, write to the Free Software Foundation, Inc.,
- * 59 Temple Place, Suite 330, Boston, MA 02111-1307 USA
+/* Copyright (C) 2012-2017 IBM Corp.
+ * This program is Licensed under the Apache License, Version 2.0
+ * (the "License"); you may not use this file except in compliance
+ * with the License. You may obtain a copy of the License at
+ *   http://www.apache.org/licenses/LICENSE-2.0
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License. See accompanying LICENSE file.
  */
-#ifndef _PAlgebra_H_
-#define _PAlgebra_H_
+#ifndef HELIB_PALGEBRA_H
+#define HELIB_PALGEBRA_H
 /**
  * @file PAlgebra.h
  * @brief Declatations of the classes PAlgebra
@@ -47,56 +42,68 @@
  * is a primitive m-th root of unity in R), we get that F_t is the minimal
  * polynomial of z^{1/t}.
  */
-
+#include <exception>
+#include <utility>
 #include "NumbTh.h"
-#include "cloned_ptr.h"
-
+#include "zzX.h"
+#include "clonedPtr.h"
+#include "hypercube.h"
 
 //NTL_CLIENT
 
 class PAlgebra {
-  unsigned long m;   // the integer m defines (Z/mZ)^*, Phi_m(X), etc.
-  unsigned long p;   // the prime base of the plaintext space
+  long m;   // the integer m defines (Z/mZ)^*, Phi_m(X), etc.
+  long p;   // the prime base of the plaintext space
 
-  unsigned long phiM; // phi(m)
-  unsigned long ordP; // the order of p in (Z/mZ)^*
-  unsigned long nSlots; // phi(m)/ordP = # of plaintext slots
+  long phiM; // phi(m)
+  long ordP; // the order of p in (Z/mZ)^*
 
   long pow2; // if m = 2^k, then pow2 == k; otherwise, pow2 == 0 
 
-  vector<long> gens; // Our generators for (Z/mZ)^* (other than p)
-  vector<long> ords; // ords[i] is the order of gens[i] in quotient group kept
-                     // with a negative sign if different than order in (Z/mZ)*
+  std::vector<long> gens; // Our generators for (Z/mZ)^* (other than p)
 
+  //  native[i] is true iff gens[i] has the same order in the quotient
+  //  group as its order in Zm*. 
+  //  VJS: I changed this from a Vec<GF2> to Vec<bool>.
+  NTL::Vec<bool> native;
 
-  vector<long> prods; // \prods[i] = \prod_{j=i}^{gens.size()-1} |ords[i]|
+  CubeSignature cube; // the hypercube structure of Zm* /(p)
 
-  ZZX PhimX;   // Holds the integer polynomial Phi_m(X)
-  double cM;   // the ring constant c_m for Z[X]/Phi_m(X)
+  NTL::ZZX PhimX;   // Holds the integer polynomial Phi_m(X)
 
-  vector<unsigned long> T; // The representatives for the quotient group (Z/mZ)^*/(p)
-  vector<long> Tidx;  // i=Tidx[t] is the index i s.t. T[i]=t. 
+  double cM;   // the "ring constant" c_m for Z[X]/Phi_m(X)
+  // NOTE: cM is related to the ratio between the l_infinity norm of
+  // a "random" ring element in different bases. For example, think of
+  // choosing the power-basis coefficients of x uniformly at random in
+  // [+-a/2] (for some parameter a), then the powerful basis norm of x
+  // should be bounded whp by cM*a.
+  //
+  // More precisely, for an element x whose coefficients are chosen
+  // uniformly in [+-a/2] (in either the powerful or the power basis)
+  // we have a high-probability bound |x|_canonical < A*a for some
+  // A = O(sqrt(phi(m)). Also for "random enough" x we have some bound
+  //       |x|_powerful < |x|_canonical * B
+  // where we "hope" that B = O(1/sqrt(phi(m)). The cM value is
+  // supposed to be cM=A*B.
+  //
+  // The value cM is only used for bootstrapping, see more comments
+  // for the method RecryptData::setAE in recryption.cpp. Also see
+  // Appendix A of https://ia.cr/2014/873 (updated version from 2019)
+
+  std::vector<long> T; // The representatives for the quotient group Zm* /(p)
+  std::vector<long> Tidx;  // i=Tidx[t] is the index i s.t. T[i]=t. 
                       // Tidx[t]==-1 if t notin T
 
-  vector<long> zmsIdx; // if t is the i'th element in (Z/mZ)* then zmsIdx[t]=i
-                       // zmsIdx[t]==-1 if t notin (Z/mZ)*
+  std::vector<long> zmsIdx; // if t is the i'th element in Zm* then zmsIdx[t]=i
+                       // zmsIdx[t]==-1 if t notin Zm*
 
-  vector<long> dLogT; 
-  // holds the discrete-logarithms for elements in T: If (z/mZ)^*/(p)
-  // has n generators then dLogT is an array of n*nSlots interest, where
-  // the entries [in, in+1,...,(i+1)n-1] hold the discrete-logarithms for
-  // the i'th element of (z/mZ)^*/(p). 
-  // Namely, for i<nSlots we have dLogT[in,...,(i+1)n-1] = [e1,...,en]
-  // s.t. T[i] = prod_{i=1}^n gi^{ei} mod m (with n=gens.size())
-
-  //  vector<long> mFactors; // The prime-power factorization of m
+  std::vector<long> zmsRep; // inverse of zmsIdx
 
  public:
 
-  PAlgebra(unsigned long mm, unsigned long pp = 2,
-           const vector<long>& _gens = vector<long>(), 
-           const vector<long>& _ords = vector<long>() );  // constructor
-
+  PAlgebra(long mm, long pp = 2,
+           const std::vector<long>& _gens = std::vector<long>(), 
+           const std::vector<long>& _ords = std::vector<long>() );  // constructor
 
   bool operator==(const PAlgebra& other) const;
   bool operator!=(const PAlgebra& other) const {return !(*this==other);}
@@ -106,113 +113,134 @@ class PAlgebra {
 
   //! Prints the structure in a readable form
   void printout() const;
+  void printAll() const; // print even more
 
   /* Access methods */
 
   //! Returns m
-  unsigned long getM() const { return m; }
+  long getM() const { return m; }
 
   //! Returns p
-  unsigned long getP() const { return p; }
+  long getP() const { return p; }
 
   //! Returns phi(m)
-  unsigned long getPhiM() const { return phiM; }
+  long getPhiM() const { return phiM; }
 
   //! The order of p in (Z/mZ)^*
-  unsigned long getOrdP() const { return ordP; }
+  long getOrdP() const { return ordP; }
 
   //! The number of plaintext slots = phi(m)/ord(p)
-  unsigned long getNSlots() const { return nSlots; }
+  long getNSlots() const { return cube.getSize(); }
 
   //! if m = 2^k, then pow2 == k; otherwise, pow2 == 0 
   long getPow2() const { return pow2; }
 
   //! The cyclotomix polynomial Phi_m(X)
-  const ZZX& getPhimX() const { return PhimX; }
+  const NTL::ZZX& getPhimX() const { return PhimX; }
 
-  //! The ring constant cM
+  //! The "ring constant" cM
   void set_cM(double c) { cM=c; }
   const double get_cM() const { return cM; }
 
   //! The prime-power factorization of m
-  //  const vector<long> getMfactors() const { return mFactors; }
+  //  const std::vector<long> getMfactors() const { return mFactors; }
 
   //! The number of generators in (Z/mZ)^* /(p)
-  unsigned long numOfGens() const { return gens.size(); }
+  long numOfGens() const { return gens.size(); }
 
   //! the i'th generator in (Z/mZ)^* /(p) (if any)
-  unsigned long ZmStarGen(unsigned long i) const
+  long ZmStarGen(long i) const
   {  return (i<gens.size())? gens[i] : 0; }
 
+  //! the i'th generator to the power j mod m
+  // VJS: I'm moving away from all of this unsigned stuff...
+  // Also, note that j really may be negative
+  // NOTE: i == -1 means Frobenius
+  long genToPow(long i, long j) const;
+
+  // p to the power j mod m
+  long frobenuisPow(long j) const;
+
   //! The order of i'th generator (if any)
-  unsigned long OrderOf(unsigned long i) const
-  {  return (i<ords.size())? abs(ords[i]) : 0; }
+  long OrderOf(long i) const
+  {  return cube.getDim(i); }
+
+  //! The product prod_{j=i}^{n-1} OrderOf(i)
+  long ProdOrdsFrom(long i) const
+  {  return cube.getProd(i); }
 
   //! Is ord(i'th generator) the same as its order in (Z/mZ)^*? 
-  bool SameOrd(unsigned long i) const
-  {  return (i<ords.size())? (ords[i]>0) : false; }
+  bool SameOrd(long i) const
+  {  return native[i]; }
 
   //! @name Translation between index, represnetatives, and exponents
 
   //! Returns the i'th element in T
-  unsigned long ith_rep(unsigned long i) const
-  {  return (i<nSlots)? T[i]: 0; }
+  long ith_rep(long i) const
+  {  return (i<getNSlots())? T[i]: 0; }
 
   //! Returns the index of t in T
-  long indexOfRep(unsigned long t) const
+  long indexOfRep(long t) const
   {  return (t>0 && t<m)? Tidx[t]: -1; }
 
   //! Is t in T?
-  bool isRep(unsigned long t) const
+  bool isRep(long t) const
   {  return (t>0 && t<m && Tidx[t]>-1); }
 
   //! Returns the index of t in (Z/mZ)*
-  long indexInZmstar(unsigned long t) const
+  long indexInZmstar(long t) const
   {  return (t>0 && t<m)? zmsIdx[t]: -1; }
 
-  //! Is t in [0,m-1] with (t,m)=1?
-  bool inZmStar(unsigned long t) const
-  {  return (t>0 && t<m && zmsIdx[t]>-1); }
+  //! Returns the index of t in (Z/mZ)* -- no range checking
+  long indexInZmstar_unchecked(long t) const
+  {  return zmsIdx[t]; }
 
-  //! @brief Returns ith coordinate of index k along the i'th dimension.
-  //! See Section 2.4 in the design document.
-  long coordinate(long i, long k) const;
- 
-  //! @brief adds offset to index k in the i'th dimension
-  long addCoord(long i, long k, long offset) const;
+  //! Returns rep whose index is i
+  long repInZmstar_unchecked(long idx) const
+  {  return zmsRep[idx]; }
+
+
+  bool inZmStar(long t) const
+  {  return (t>0 && t<m && zmsIdx[t]>-1); }
 
   //! @brief Returns prod_i gi^{exps[i]} mod m. If onlySameOrd=true,
   //! use only generators that have the same order as in (Z/mZ)^*.
-  unsigned long exponentiate(const vector<unsigned long>& exps, 
+  long exponentiate(const std::vector<long>& exps, 
 			      bool onlySameOrd=false) const;
 
-  //! Inverse of exponentiate
-  const long* dLog(unsigned long t) const {
-    long i = indexOfRep(t);
-    if (i<0) return NULL;
-    return &(dLogT[i*gens.size()]); // bug: this should be an iterator
+  //! @brief Returns coordinate of index k along the i'th dimension.
+  long coordinate(long i, long k) const { return cube.getCoord(k,i); }
+
+  //! Break an index into the hypercube to index of the dimension-dim
+  //! subcube and index inside that subcube.
+  std::pair<long,long> breakIndexByDim(long idx, long dim) const {
+    return cube.breakIndexByDim(idx, dim);
+  }
+  //! The inverse of breakIndexByDim
+  long assembleIndexByDim(std::pair<long,long> idx, long dim) const {
+    return cube.assembleIndexByDim(idx, dim);
+  }
+
+  //! @brief adds offset to index k in the i'th dimension
+  long addCoord(long i, long k, long offset) const {
+    return cube.addCoord(k,i,offset);
   }
 
   /* Miscellaneous */
 
-  //! The order of the quoteint group (Z/mZ)^* /(p) (if flag=false), or the
-  //! subgroup of elements with the same order as in (Z/mZ)^* (if flag=true)
-  unsigned long qGrpOrd(bool onlySameOrd=false) const { 
-    if (gens.size()<=0) return 1;
-    unsigned long ord = 1;
-    for (unsigned long i=0; i<ords.size(); i++)
-      if (!onlySameOrd || SameOrd(i)) ord *= abs(ords[i]);
-    return ord;
-  }
-
   //! exps is an array of exponents (the dLog of some t in T), this function
   //! incerement exps lexicographic order, reutrn false if it cannot be
   //! incremented (because it is at its maximum value)
-  bool nextExpVector(vector<unsigned long>& exps) const;
+  bool nextExpVector(std::vector<long>& exps) const {
+    return cube.incrementCoords(exps);
+  }
+
+  //! The largest FFT we need to handle degree-m polynomials
+  long fftSizeNeeded() const {return NTL::NextPowerOfTwo(getM()) +1;}
 };
 
 
-enum PA_tag { PA_GF2_tag, PA_zz_p_tag };
+enum PA_tag { PA_GF2_tag, PA_zz_p_tag, PA_cx_tag };
 
 /**
 @class: PAlgebraMod 
@@ -266,13 +294,16 @@ template<class R>
 struct GenericModulus { };
 
 template<> 
-struct GenericModulus<zz_p> {
-  static void init(long p) { zz_p::init(p); }
+struct GenericModulus<NTL::zz_p> {
+  static void init(long p) { NTL::zz_p::init(p); }
 };
 
 template<> 
-struct GenericModulus<GF2> {
-  static void init(long p) { assert(p == 2); }
+struct GenericModulus<NTL::GF2> {
+  static void init(long p) {
+    //OLD: assert(p == 2);
+    helib::assertEq<helib::InvalidArgument>(p, 2l, "Cannot init NTL::GF2 with p not 2");
+  }
 };
 
 class PA_GF2 {
@@ -280,21 +311,21 @@ class PA_GF2 {
 
 public:
   static const PA_tag tag = PA_GF2_tag;
-  typedef GF2 R;
-  typedef GF2X RX;
-  typedef vec_GF2X vec_RX;
-  typedef GF2XModulus RXModulus;
+  typedef NTL::GF2 R;
+  typedef NTL::GF2X RX;
+  typedef NTL::vec_GF2X vec_RX;
+  typedef NTL::GF2XModulus RXModulus;
   typedef DummyBak RBak;
   typedef DummyContext RContext;
-  typedef GF2E RE;
-  typedef vec_GF2E vec_RE;
-  typedef mat_GF2E mat_RE;
-  typedef GF2EX REX;
-  typedef GF2EBak REBak;
-  typedef vec_GF2EX vec_REX;
-  typedef GF2EContext REContext;
-  typedef mat_GF2 mat_R;
-  typedef vec_GF2 vec_R;
+  typedef NTL::GF2E RE;
+  typedef NTL::vec_GF2E vec_RE;
+  typedef NTL::mat_GF2E mat_RE;
+  typedef NTL::GF2EX REX;
+  typedef NTL::GF2EBak REBak;
+  typedef NTL::vec_GF2EX vec_REX;
+  typedef NTL::GF2EContext REContext;
+  typedef NTL::mat_GF2 mat_R;
+  typedef NTL::vec_GF2 vec_R;
 };
 
 
@@ -303,21 +334,21 @@ class PA_zz_p {
 
 public:
   static const PA_tag tag = PA_zz_p_tag;
-  typedef zz_p R;
-  typedef zz_pX RX;
-  typedef vec_zz_pX vec_RX;
-  typedef zz_pXModulus RXModulus;
-  typedef zz_pBak RBak;
-  typedef zz_pContext RContext;
-  typedef zz_pE RE;
-  typedef vec_zz_pE vec_RE;
-  typedef mat_zz_pE mat_RE;
-  typedef zz_pEX REX;
-  typedef zz_pEBak REBak;
-  typedef vec_zz_pEX vec_REX;
-  typedef zz_pEContext REContext;
-  typedef mat_zz_p mat_R;
-  typedef vec_zz_p vec_R;
+  typedef NTL::zz_p R;
+  typedef NTL::zz_pX RX;
+  typedef NTL::vec_zz_pX vec_RX;
+  typedef NTL::zz_pXModulus RXModulus;
+  typedef NTL::zz_pBak RBak;
+  typedef NTL::zz_pContext RContext;
+  typedef NTL::zz_pE RE;
+  typedef NTL::vec_zz_pE vec_RE;
+  typedef NTL::mat_zz_pE mat_RE;
+  typedef NTL::zz_pEX REX;
+  typedef NTL::zz_pEBak REBak;
+  typedef NTL::vec_zz_pEX vec_REX;
+  typedef NTL::zz_pEContext REContext;
+  typedef NTL::mat_zz_p mat_R;
+  typedef NTL::vec_zz_p vec_R;
 };
 //! \endcond
 
@@ -337,7 +368,7 @@ public:
   virtual const PAlgebra& getZMStar() const = 0;
 
   //! Returns reference to the factorization of Phi_m(X) mod p^r, but as ZZX's
-  virtual const vector<ZZX>& getFactorsOverZZ() const = 0;
+  virtual const std::vector<NTL::ZZX>& getFactorsOverZZ() const = 0;
 
   //! The value r
   virtual long getR() const  = 0;
@@ -347,6 +378,8 @@ public:
 
   //! Restores the NTL context for p^r
   virtual void restoreContext() const = 0;
+
+  virtual zzX getMask_zzX(long i, long j) const = 0;
 
 };
 
@@ -371,6 +404,8 @@ public:
 
 #endif
 
+
+
 template<class type> class PAlgebraModDerived;
 // forward declaration
 
@@ -390,8 +425,9 @@ private:
 
   /* the remaining fields are visible only to PAlgebraModDerived */
 
-  vector<RX> maps;
-  vector<REX> rmaps;
+  std::vector<RX> maps;
+  std::vector<mat_R> matrix_maps;
+  std::vector<REX> rmaps;
 
 public:
   const RX& getG() const { return G; }
@@ -405,25 +441,25 @@ public:
 template<class T> 
 class TNode {
 public:
-  shared_ptr< TNode<T> > left, right;
+  std::shared_ptr< TNode<T> > left, right;
   T data;
 
-  TNode(shared_ptr< TNode<T> > _left, shared_ptr< TNode<T> > _right,
+  TNode(std::shared_ptr< TNode<T> > _left, std::shared_ptr< TNode<T> > _right,
            const T& _data) : left(_left), right(_right), data(_data) { }
 };
 
 template<class T>
-shared_ptr< TNode<T> > 
-  buildTNode(shared_ptr< TNode<T> > left, 
-                shared_ptr< TNode<T> > right,
+std::shared_ptr< TNode<T> > 
+  buildTNode(std::shared_ptr< TNode<T> > left, 
+                std::shared_ptr< TNode<T> > right,
                 const T& data)
 {
-  return shared_ptr< TNode<T> >(new TNode<T>(left, right, data));
+  return std::shared_ptr< TNode<T> >(new TNode<T>(left, right, data));
 }
 
-template<class T> shared_ptr< TNode<T> > nullTNode()
+template<class T> std::shared_ptr< TNode<T> > nullTNode()
 {
-  return shared_ptr< TNode<T> >();
+  return std::shared_ptr< TNode<T> >();
 }
 //! \endcond
   
@@ -443,11 +479,11 @@ private:
   RXModulus PhimXMod;
 
   vec_RX factors;
-  vector<ZZX> factorsOverZZ;
+  std::vector<NTL::ZZX> factorsOverZZ;
   vec_RX crtCoeffs;
-  vector< vector< RX > >  maskTable;
-  vector<RX> crtTable;
-  shared_ptr< TNode<RX> > crtTree;
+  std::vector< std::vector< RX > >  maskTable;
+  std::vector<RX> crtTable;
+  std::shared_ptr< TNode<RX> > crtTree;
 
   void genMaskTable();
   void genCrtTable();
@@ -472,7 +508,8 @@ public:
   {
     if (this == &other) return *this;
 
-    assert(&zMStar == &other.zMStar);
+    //OLD: assert(&zMStar == &other.zMStar);
+    helib::assertEq(&zMStar, &other.zMStar, "Cannot assign PAlgebras with different zMStar values");
     r = other.r;
     pPowR = other.pPowR;
     pPowRContext = other.pPowRContext;
@@ -488,25 +525,25 @@ public:
   }
 
   //! Returns a pointer to a "clone"
-  virtual PAlgebraModBase* clone() const { return new PAlgebraModDerived(*this); }
+  virtual PAlgebraModBase* clone() const override { return new PAlgebraModDerived(*this); }
 
   //! Returns the type tag: PA_GF2_tag or PA_zz_p_tag
-  virtual PA_tag getTag() const { return tag; }
+  virtual PA_tag getTag() const override { return tag; }
 
   //! Returns reference to underlying PAlgebra object
-  virtual const PAlgebra& getZMStar() const { return zMStar; }
+  virtual const PAlgebra& getZMStar() const override { return zMStar; }
 
   //! Returns reference to the factorization of Phi_m(X) mod p^r, but as ZZX's
-  virtual const vector<ZZX>& getFactorsOverZZ() const { return factorsOverZZ; }
+  virtual const std::vector<NTL::ZZX>& getFactorsOverZZ() const override { return factorsOverZZ; }
 
   //! The value r
-  virtual long getR() const { return r; }
+  virtual long getR() const override { return r; }
 
   //! The value p^r
-  virtual long getPPowR() const { return pPowR; }
+  virtual long getPPowR() const override { return pPowR; }
 
   //! Restores the NTL context for p^r
-  virtual void restoreContext() const { pPowRContext.restore(); }
+  virtual void restoreContext() const override { pPowRContext.restore(); }
 
 
   /* In all of the following functions, it is expected that the caller 
@@ -531,17 +568,22 @@ public:
      @brief Returns ref to maskTable, which is used to implement rotations
      (in the EncryptedArray module).
 
-     maskTable[i][j] is a polynomial representation of a mask that is 1 in
+     `maskTable[i][j]` is a polynomial representation of a mask that is 1 in
      all slots whose i'th coordinate is at least j, and 0 elsewhere. We have:
      \verbatim
        maskTable.size() == zMStar.numOfGens()     // # of generators
        for i = 0..maskTable.size()-1:
-         maskTable[i].size() == zMStar.OrderOf(i) // order of generator i
+         maskTable[i].size() == zMStar.OrderOf(i)+1 // order of generator i
      \endverbatim
   **/
-  const vector< vector< RX > >& getMaskTable() const // logically, but not really, const
+  const std::vector< std::vector< RX > >& getMaskTable() const // logically, but not really, const
   {
     return maskTable;
+  }
+
+  zzX getMask_zzX(long i, long j) const override
+  {
+    return convert<zzX>(maskTable.at(i).at(j));
   }
 
 
@@ -552,12 +594,12 @@ public:
   //! (as returned by zMStar.getOrdP()).
   //! In addition, when r > 1, G must be the monomial X (RX(1, 1))
 
-  //! @brief Returns a vector crt[] such that crt[i] = H mod Ft (with t = T[i])
-  void CRT_decompose(vector<RX>& crt, const RX& H) const;
+  //! @brief Returns a std::vector crt[] such that crt[i] = H mod Ft (with t = T[i])
+  void CRT_decompose(std::vector<RX>& crt, const RX& H) const;
 
   //! @brief Returns H in R[X]/Phi_m(X) s.t. for every i<nSlots and t=T[i],
   //! we have H == crt[i] (mod Ft)
-  void CRT_reconstruct(RX& H, vector<RX>& crt) const;
+  void CRT_reconstruct(RX& H, std::vector<RX>& crt) const;
 
   //! @brief Compute the maps for all the slots.
   //! In the current implementation, we if r > 1, then
@@ -579,17 +621,17 @@ public:
   //!
   //! Must have deg(alpha[i])<deg(G). The mappingData argument should contain
   //! the output of mapToSlots(G).
-  void embedInSlots(RX& H, const vector<RX>& alphas, 
+  void embedInSlots(RX& H, const std::vector<RX>& alphas, 
                     const MappingData<type>& mappingData) const;
 
   //! @brief Return an array such that alphas[i] in R[X]/G(X) represent the
   //! same element as rt = (H mod Ft) in R[X]/Ft(X) where t=T[i].
   //!
   //! The mappingData argument should contain the output of mapToSlots(G).
-  void decodePlaintext(vector<RX>& alphas, const RX& ptxt,
+  void decodePlaintext(std::vector<RX>& alphas, const RX& ptxt,
 		       const MappingData<type>& mappingData) const;
 
-  //! @brief Returns a coefficient vector C for the linearized polynomial
+  //! @brief Returns a coefficient std::vector C for the linearized polynomial
   //! representing M.
   //!
   //! For h in Z/(p^r)[X] of degree < d,
@@ -597,7 +639,7 @@ public:
   //! G is assumed to be defined in mappingData, with d = deg(G).
   //! L describes a linear map M by describing its action on the standard
   //! power basis: M(x^j mod G) = (L[j] mod G), for j = 0..d-1.  
-  void buildLinPolyCoeffs(vector<RX>& C, const vector<RX>& L,
+  void buildLinPolyCoeffs(std::vector<RX>& C, const std::vector<RX>& L,
                           const MappingData<type>& mappingData) const;
   ///@}
 private:
@@ -613,16 +655,44 @@ private:
 
   //! Same as above, but embeds relative to Ft rather than F1. The
   //! optional rF1 contains the output of mapToF1, to speed this operation.
-  void mapToFt(RX& w, const RX& G, unsigned long t, const RX* rF1=NULL) const;
+  void mapToFt(RX& w, const RX& G, long t, const RX* rF1=NULL) const;
 
-  void buildTree(shared_ptr< TNode<RX> >& res, long offset, long extent) const;
+  void buildTree(std::shared_ptr< TNode<RX> >& res, long offset, long extent) const;
 
   void evalTree(RX& res, 
-              shared_ptr< TNode<RX> > tree,
-              const vector<RX>& crt1,
-              long offset, long extent) const;
+  std::shared_ptr< TNode<RX> > tree,
+  const std::vector<RX>& crt1,
+  long offset, long extent) const;
 };
 
+//! A different derived class to be used for the approximate-numbers scheme
+//! This is mostly a dummy class, but needed since the context always has a
+//! PAlgeberaMod data member.
+class PAlgebraModCx : public PAlgebraModBase {
+  const PAlgebra& zMStar;
+  long r; // counts bits of precision
+
+public:
+
+ PAlgebraModCx(const PAlgebra& palg, long _r): zMStar(palg), r(_r) {
+   //OLD: assert(r>0 || r<NTL_SP_NBITS);
+   helib::assertInRange<helib::InvalidArgument>(r, 1l, (long)NTL_SP_NBITS, "Invalid bit precision r");
+  }
+
+  PAlgebraModBase* clone() const override { return new PAlgebraModCx(*this); }
+  PA_tag getTag() const override { return PA_cx_tag; }
+
+  const PAlgebra& getZMStar() const override { return zMStar; }
+  long getR() const override {return r;}
+  long getPPowR() const override { return 1L<<r; }
+  void restoreContext() const override {}
+
+  // These function make no sense for PAlgebraModCx
+  const std::vector<NTL::ZZX>& getFactorsOverZZ() const override
+  { throw helib::LogicError("PAlgebraModCx::getFactorsOverZZ undefined"); }
+  zzX getMask_zzX(long i, long j) const override
+  { throw helib::LogicError("PAlgebraModCx::getMask_zzX undefined"); }
+};
 
 
 //! Builds a table, of type PA_GF2 if p == 2 and r == 1, and PA_zz_p otherwise
@@ -656,7 +726,8 @@ public:
   template<class type> 
   const PAlgebraModDerived<type>& getDerived(type) const
   { return dynamic_cast< const PAlgebraModDerived<type>& >( *rep ); }
-  
+  const PAlgebraModCx& getCx() const
+  { return dynamic_cast< const PAlgebraModCx& >( *rep ); }
   
   bool operator==(const PAlgebraMod& other) const
   {
@@ -677,7 +748,7 @@ public:
   //! Returns reference to underlying PAlgebra object
   const PAlgebra& getZMStar() const { return rep->getZMStar(); }
   //! Returns reference to the factorization of Phi_m(X) mod p^r, but as ZZX's
-  const vector<ZZX>& getFactorsOverZZ() const { return rep->getFactorsOverZZ(); }
+  const std::vector<NTL::ZZX>& getFactorsOverZZ() const { return rep->getFactorsOverZZ(); }
   //! The value r
   long getR() const { return rep->getR(); } 
   //! The value p^r
@@ -685,6 +756,13 @@ public:
   //! Restores the NTL context for p^r
   void restoreContext() const { rep->restoreContext(); }
 
+  zzX getMask_zzX(long i, long j) const { return rep->getMask_zzX(i, j); }
+
 };
 
-#endif // #ifdef _PAlgebra_H_
+//! returns true if the palg parameters match the rest, false otherwise
+bool comparePAlgebra(const PAlgebra& palg,
+                     unsigned long m, unsigned long p, unsigned long r,
+                     const std::vector<long>& gens, const std::vector<long>& ords);
+
+#endif // #ifndef HELIB_PALGEBRA_H

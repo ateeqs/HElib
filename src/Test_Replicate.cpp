@@ -1,17 +1,13 @@
-/* Copyright (C) 2012,2013 IBM Corp.
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation; either version 2 of the License, or
- * (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
- * See the GNU General Public License for more details.
- * 
- * You should have received a copy of the GNU General Public License along
- * with this program; if not, write to the Free Software Foundation, Inc.,
- * 59 Temple Place, Suite 330, Boston, MA 02111-1307 USA
+/* Copyright (C) 2012-2017 IBM Corp.
+ * This program is Licensed under the Apache License, Version 2.0
+ * (the "License"); you may not use this file except in compliance
+ * with the License. You may obtain a copy of the License at
+ *   http://www.apache.org/licenses/LICENSE-2.0
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License. See accompanying LICENSE file.
  */
 
 /* Test_Replicate.cpp - Testing the functionality of replicating one
@@ -27,10 +23,12 @@ NTL_CLIENT
 #include "replicate.h"
 #include "timing.h"
 
+static bool noPrint = false;
+
 static bool check_replicate(const Ctxt& c1, const Ctxt& c0, long i,
 			    const FHESecKey& sKey, const EncryptedArray& ea)
 {
-  NewPlaintextArray pa0(ea), pa1(ea);
+  PlaintextArray pa0(ea), pa1(ea);
   ea.decrypt(c0, sKey, pa0);
   ea.decrypt(c1, sKey, pa1);
   replicate(ea, pa0, i);
@@ -46,7 +44,7 @@ class ReplicateTester : public ReplicateHandler {
 public:
   const FHESecKey& sKey;
   const EncryptedArray& ea;
-  const NewPlaintextArray& pa;
+  const PlaintextArray& pa;
   long B;
 
   double t_last, t_total;
@@ -54,7 +52,7 @@ public:
   bool error;
 
   ReplicateTester(const FHESecKey& _sKey, const EncryptedArray& _ea, 
-                  const NewPlaintextArray& _pa, long _B)
+                  const PlaintextArray& _pa, long _B)
   : sKey(_sKey), ea(_ea), pa(_pa), B(_B)
   {
     t_last = GetTime();
@@ -74,9 +72,11 @@ public:
     t_total += t_elapsed;
 
     // Decrypt and check
-    NewPlaintextArray pa1 = pa;
+    PlaintextArray pa1 = pa;
     replicate(ea, pa1, pos);
-    NewPlaintextArray pa2(ea);
+    PlaintextArray pa2(ea);
+
+    if (pos==0 && !noPrint) CheckCtxt(ctxt, "replicateAll");
 
     ea.decrypt(ctxt, sKey, pa2);
     if (!equals(ea, pa1, pa2)) error = true; // record the error, if any
@@ -91,43 +91,40 @@ public:
 
 void  TestIt(long m, long p, long r, long d, long L, long bnd, long B)
 {
-  cout << "*** TestIt" << (isDryRun()? "(dry run):" : ":")
-       << " m=" << m
-       << ", p=" << p
-       << ", r=" << r
-       << ", d=" << d
-       << ", L=" << L
-       << ", bnd=" << bnd
-       << ", B=" << B
-       << endl;
+  if (!noPrint)
+    std::cout << "*** TestIt" << (isDryRun()? "(dry run):" : ":")
+	 << " m=" << m
+	 << ", p=" << p
+	 << ", r=" << r
+	 << ", d=" << d
+	 << ", L=" << L
+	 << ", bnd=" << bnd
+	 << ", B=" << B
+	 << endl;
 
   setTimersOn();
   FHEcontext context(m, p, r);
   buildModChain(context, L, /*c=*/2);
 
-  context.zMStar.printout();
-  cout << endl;
-
-  FHESecKey secretKey(context);
-  const FHEPubKey& publicKey = secretKey;
-  secretKey.GenSecKey(/*w=*/64); // A Hamming-weight-w secret key
-
   ZZX G;
   if (d == 0)
     G = context.alMod.getFactorsOverZZ()[0];
   else
-    G = makeIrredPoly(p, d); 
+    G = makeIrredPoly(p, d);
 
-  cout << "G = " << G << "\n";
-  cout << "generating key-switching matrices... ";
+  if (!noPrint) {
+    context.zMStar.printout();
+    cout << endl;
+    cout << "G = " << G << "\n";
+  }
+
+  FHESecKey secretKey(context);
+  const FHEPubKey& publicKey = secretKey;
+  secretKey.GenSecKey(); // A +-1/0 secret key
   addSome1DMatrices(secretKey); // compute key-switching matrices that we need
-  cout << "done\n";
 
-  cout << "computing masks and tables for rotation...";
   EncryptedArray ea(context, G);
-  cout << "done\n";
-
-  NewPlaintextArray xp0(ea), xp1(ea);
+  PlaintextArray xp0(ea), xp1(ea);
   random(ea, xp0);
   random(ea, xp1);
 
@@ -137,13 +134,13 @@ void  TestIt(long m, long p, long r, long d, long L, long bnd, long B)
   ZZX poly_xp1;
   ea.encode(poly_xp1, xp1);
 
-  cout << "** Testing replicate():\n";
+  if (!noPrint)  cout << "** Testing replicate():\n";
   bool error = false;
   Ctxt xc1 = xc0;
-  CheckCtxt(xc1, "before replicate");
+  if (!noPrint) CheckCtxt(xc1, "before replicate");
   replicate(ea, xc1, ea.size()/2);
   if (!check_replicate(xc1, xc0, ea.size()/2, secretKey, ea)) error = true;
-  CheckCtxt(xc1, "after replicate");
+  if (!noPrint) CheckCtxt(xc1, "after replicate");
 
   // Get some timing results
   for (long i=0; i<20 && i<ea.size(); i++) {
@@ -153,11 +150,12 @@ void  TestIt(long m, long p, long r, long d, long L, long bnd, long B)
     if (!check_replicate(xc1, xc0, i, secretKey, ea)) error = true;
     FHE_NTIMER_STOP(replicate);
   }
-  cout << "  Replicate test " << (error? "failed :(\n" : "succeeded :)")
-       << endl<< endl;
-  printAllTimers();
+  cout << (error? "BAD" : "GOOD") << endl;
 
-  cout << "\n** Testing replicateAll()... " << std::flush;
+  if (!noPrint) {
+    printAllTimers();
+    cout << "\n** Testing replicateAll()... " << std::flush;
+  }
 #ifdef DEBUG_PRINTOUT
   replicateVerboseFlag = true;
 #else
@@ -172,13 +170,12 @@ void  TestIt(long m, long p, long r, long d, long L, long bnd, long B)
   }
   catch (StopReplicate) {
   }
-  cout << (handler->error? "failed :(\n" : "succeeded :)")
-       << ", total time=" << handler->t_total << " ("
-       << ((B>0)? B : ea.size())
-       << " vectors)\n";
+  std::cout << (handler->error? "BAD" : "GOOD") << endl;
+  if (!noPrint)
+    cout << "  total time=" << handler->t_total << " ("
+         << ((B>0)? B : ea.size()) << " vectors)\n";
   delete handler;
 }
-
 
 int main(int argc, char *argv[]) 
 {
@@ -200,14 +197,16 @@ int main(int argc, char *argv[])
   amap.arg("d", d, "degree of the field extension");
   amap.note("d == 0 => factors[0] defines extension");
 
-  long L=3;
-  amap.arg("L", L, "# of levels in the modulus chain",  "heuristic");
+  long L=250;
+  amap.arg("L", L, "# of bits in the modulus chain");
 
   long bnd = 64;
   amap.arg("bnd", bnd, "recursion bound for replication");
 
   long B = 0;
   amap.arg("B", B, "bound for # of replications", "all");
+
+  amap.arg("noPrint", noPrint, "suppress printouts");
 
   amap.parse(argc, argv);
   setDryRun(dry);

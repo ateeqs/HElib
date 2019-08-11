@@ -1,109 +1,201 @@
-# Copyright (C) 2012,2013 IBM Corp.
-# This program is free software; you can redistribute it and/or modify
-# it under the terms of the GNU General Public License as published by
-# the Free Software Foundation; either version 2 of the License, or
-# (at your option) any later version.
+# Copyright (C) 2012-2017 IBM Corp.
 #
-# This program is distributed in the hope that it will be useful,
-# but WITHOUT ANY WARRANTY; without even the implied warranty of
-# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
-# See the GNU General Public License for more details.
-# 
-# You should have received a copy of the GNU General Public License along
-# with this program; if not, write to the Free Software Foundation, Inc.,
-# 59 Temple Place, Suite 330, Boston, MA 02111-1307 USA
+# This program is Licensed under the Apache License, Version 2.0
+# (the "License"); you may not use this file except in compliance
+# with the License. You may obtain a copy of the License at
+#   http://www.apache.org/licenses/LICENSE-2.0
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License. See accompanying LICENSE file.
 # 
 CC = g++
+LD = g++
+AR = ar
+ARFLAGS=rv
+GMP=-lgmp
+NTL=-lntl
+COPT=-g -O2
+ARMA=-larmadillo
+CFFT=-DFFT_ARMA
+
+# INC and LIB changed to when GMP and/or NTL not in default locations
+# Put these definitions in the file local-defs, which will be included
+# if found.  ====> PUT ONLY *ABSOLUTE PATHS* IN local-defs <====
+# You can also overwrite COPT, CFFT, and ARMA in this local file.
+# See local-def.example for an example.
+include $(wildcard local-defs)
+
 #
-#CFLAGS = -g -O2 -Wfatal-errors -Wshadow -Wall -I/usr/local/include 
-#CFLAGS = -g -O2 -std=c++11 -pthread -DFHE_THREADS -DFHE_DCRT_THREADS -DFHE_BOOT_THREADS
-#CFLAGS = -g -O2 -std=c++11 -pthread
-CFLAGS = -g -O2 -std=c++11 
+CFLAGS = -std=c++11 -pthread $(COPT) $(INC_NTL) $(INC_GMP) $(CFFT) -DFHE_THREADS -DFHE_BOOT_THREADS -fmax-errors=4 
+
+# NOTE: NTL and GMP are distributed under LGPL (v2.1), so you can link
+#       against them as dynamic libraries.
+LDLIBS = $(LIB_NTL) $(LIB_GMP) $(NTL) $(GMP) $(ARMA) -lm
+
 
 # useful flags:
-#   -std=c++11
-#   -DUSE_ALT_CRT  tells helib to use an alterntive to the default DoubleCRT
-#                  representation...experimental...can be faster or slower
-#                  depending on the operation mixture
-#
-#   -DNO_HALF_SIZE_PRIME  tells helib to not use the half size prime
-#                         in the prime chain
-#
-#   -DEVALMAP_CACHED=0  tells helib to cache certain constants as ZZX's
-#   -DEVALMAP_CACHED=1  tells helib to cache certain constants as DoubleCRT's
-#                       these flags only affect bootstrapping
-#
 #   -DFHE_THREADS  tells helib to enable generic multithreading capabilities;
 #                  must be used with a thread-enabled NTL and the -pthread
 #                  flag should be passed to gcc
 #
-#   -DFHE_DCRT_THREADS  tells helib to use a multithreading strategy at the
-#                       DoubleCRT level; requires -DFHE_THREADS (see above)
-#
 #   -DFHE_BOOT_THREADS  tells helib to use a multithreading strategy for
 #                       bootstrapping; requires -DFHE_THREADS (see above)
+#   -DFFT_NATIVE or -DFFT_ARMA
+#                use slow-DFT (NATIVE) or Armadillo-based FFT (ARMA) to
+#                compute the canonical embedding of small polynomials.
+#                -DFFT_ARMA requires the Armadillo library
+#                -DFFT_NATIVE effects a considerable slowdown in key-generation
+#                If neither is defined, some noise terms may be larger
+#                than expected, possibly causing decryption errors.
+#
+#  If you get compilation errors, you may need to add -std=c++11
 
-#  If you get compilation errors, you may need to add -std=c++11 or -std=c++0x
-
-$(info HElib requires NTL version 9.4.0 or higher, see http://shoup.net/ntl)
-$(info If you get compilation errors, try to add/remove -std=c++11 in Makefile)
+$(info HElib requires NTL version 10.0.0 or higher, see http://shoup.net/ntl)
+$(info Some functionality also needs Armadillo, see http://arma.sourceforge.net/)
 $(info )
 
-LD = g++
-AR = ar
-ARFLAGS=ruv
-GMP=-lgmp 
-LDLIBS = -L/usr/local/lib -lntl $(GMP) -lm
+HEADER = EncryptedArray.h FHE.h Ctxt.h CModulus.h FHEContext.h PAlgebra.h DoubleCRT.h NumbTh.h bluestein.h IndexSet.h timing.h IndexMap.h replicate.h hypercube.h matching.h powerful.h permutations.h polyEval.h multicore.h EvalMap.h matmul.h PtrVector.h PtrMatrix.h intraSlot.h recryption.h debugging.h binaryArith.h binaryCompare.h tableLookup.h binio.h sample.h norms.h zzX.h primeChain.h
 
-HEADER = EncryptedArray.h FHE.h Ctxt.h CModulus.h FHEContext.h PAlgebra.h DoubleCRT.h NumbTh.h bluestein.h IndexSet.h timing.h IndexMap.h replicate.h hypercube.h matching.h powerful.h permutations.h polyEval.h multicore.h matrix.h
+SRC = KeySwitching.cpp EncryptedArray.cpp EaCx.cpp FHE.cpp Ctxt.cpp CModulus.cpp FHEContext.cpp PAlgebra.cpp DoubleCRT.cpp NumbTh.cpp bluestein.cpp IndexSet.cpp timing.cpp replicate.cpp hypercube.cpp matching.cpp powerful.cpp BenesNetwork.cpp permutations.cpp PermNetwork.cpp OptimizePermutations.cpp eqtesting.cpp polyEval.cpp extractDigits.cpp EvalMap.cpp recryption.cpp debugging.cpp matmul.cpp intraSlot.cpp binaryArith.cpp binaryCompare.cpp tableLookup.cpp binio.cpp sample.cpp norms.cpp zzX.cpp fft.cpp primeChain.cpp
 
-SRC = KeySwitching.cpp EncryptedArray.cpp FHE.cpp Ctxt.cpp CModulus.cpp FHEContext.cpp PAlgebra.cpp DoubleCRT.cpp NumbTh.cpp bluestein.cpp IndexSet.cpp timing.cpp replicate.cpp hypercube.cpp matching.cpp powerful.cpp BenesNetwork.cpp permutations.cpp PermNetwork.cpp OptimizePermutations.cpp eqtesting.cpp polyEval.cpp extractDigits.cpp EvalMap.cpp OldEvalMap.cpp recryption.cpp debugging.cpp matrix.cpp
+OBJ = NumbTh.o timing.o bluestein.o PAlgebra.o  CModulus.o FHEContext.o IndexSet.o DoubleCRT.o FHE.o KeySwitching.o Ctxt.o EncryptedArray.o EaCx.o replicate.o hypercube.o matching.o powerful.o BenesNetwork.o permutations.o PermNetwork.o OptimizePermutations.o eqtesting.o polyEval.o extractDigits.o EvalMap.o recryption.o debugging.o matmul.o intraSlot.o tableLookup.o binio.o sample.o norms.o zzX.o fft.o primeChain.o binaryArith.o binaryCompare.o
 
-OBJ = NumbTh.o timing.o bluestein.o PAlgebra.o  CModulus.o FHEContext.o IndexSet.o DoubleCRT.o FHE.o KeySwitching.o Ctxt.o EncryptedArray.o replicate.o hypercube.o matching.o powerful.o BenesNetwork.o permutations.o PermNetwork.o OptimizePermutations.o eqtesting.o polyEval.o extractDigits.o EvalMap.o OldEvalMap.o recryption.o debugging.o matrix.o
-
-TESTPROGS = Test_General_x Test_PAlgebra_x Test_IO_x Test_Replicate_x Test_LinPoly_x Test_matmul_x Test_Powerful_x Test_Permutations_x Test_Timing_x Test_PolyEval_x Test_extractDigits_x Test_EvalMap_x Test_bootstrapping_x
-
+TESTPROGS = Test_General_x Test_PAlgebra_x Test_IO_x Test_Bin_IO_x Test_Replicate_x Test_matmul_x Test_Powerful_x Test_Permutations_x Test_Timing_x Test_PolyEval_x Test_extractDigits_x Test_EvalMap_x Test_ThinEvalMap_x Test_bootstrapping_x Test_ThinBootstrapping_x Test_PtrVector_x Test_intraSlot_x Test_binaryArith_x Test_binaryCompare_x Test_tableLookup_x Test_approxNums_x
 
 all: fhe.a
 
-check: Test_General_x Test_LinPoly_x Test_Permutations_x Test_PolyEval_x Test_Replicate_x Test_EvalMap_x Test_extractDigits_x Test_bootstrapping_x
-	./Test_General_x R=1 m=255
-	./Test_General_x R=1 k=10 p=2 r=1 d=1
-	./Test_General_x R=1 k=10 p=2 r=2 d=1
-	./Test_General_x R=1 k=10 p=2 r=1 d=2
-	./Test_General_x R=1 k=10 p=3 r=1 d=1
-	./Test_General_x R=2 k=10 p=3 r=2 d=1 c=3
-	./Test_General_x R=1 k=10 p=3 r=1 d=2 c=3
-	./Test_LinPoly_x
-	./Test_Permutations_x
-	./Test_PolyEval_x
-	./Test_Replicate_x m=1247
-	./Test_EvalMap_x mvec="[7 3 221]" gens="[3979 3095 3760]" ords="[6 2 -8]"
-	./Test_extractDigits_x m=2047 p=5
-	./Test_bootstrapping_x
+# if makedep.d exists in the current directory, include it
+include $(wildcard makedep.d)
 
+check:
+	$(MAKE) check_General
+	$(MAKE) check_matmul
+	$(MAKE) check_Permutations
+	$(MAKE) check_PolyEval
+	$(MAKE) check_Replicate
+	$(MAKE) check_EvalMap
+	$(MAKE) check_extractDigits
+	$(MAKE) check_bootstrapping
+	$(MAKE) check_ThinBootstrapping
+	$(MAKE) check_binaryArith
+	$(MAKE) check_binaryCompare
+	$(MAKE) check_tableLookup
+	$(MAKE) check_Bin_IO
+	$(MAKE) check_approxNums
+
+check_General: Test_General_x 
+	./Test_General_x R=1 k=10 p=2 r=2 noPrint=1
+	./Test_General_x R=1 k=10 p=2 d=2 noPrint=1
+	./Test_General_x R=2 k=10 p=7 r=2 noPrint=1
+
+check_matmul: Test_matmul_x 
+	./Test_matmul_x m=18631 L=300 
+	./Test_matmul_x block=1 m=24295 gens="[16386 16427]" ords="[42 16]" L=300
+
+check_Permutations: Test_Permutations_x 
+	./Test_Permutations_x noPrint=1
+
+check_PolyEval: Test_PolyEval_x 
+	./Test_PolyEval_x p=7 r=2 d=34 noPrint=1
+
+check_Replicate: Test_Replicate_x 
+	./Test_Replicate_x m=1247 noPrint=1
+
+check_EvalMap: Test_EvalMap_x 
+	./Test_EvalMap_x mvec="[7 3 221]" gens="[3979 3095 3760]" ords="[6 2 -8]" noPrint=1
+
+check_ThinEvalMap: Test_ThinEvalMap_x 
+	./Test_ThinEvalMap_x mvec="[7 3 221]" gens="[3979 3095 3760]" ords="[6 2 -8]" noPrint=1
+
+check_extractDigits: Test_extractDigits_x 
+	./Test_extractDigits_x m=2047 p=5 noPrint=1
+
+check_bootstrapping: Test_bootstrapping_x 
+	./Test_bootstrapping_x noPrint=1 N=512
+	./Test_bootstrapping_x noPrint=1 N=2300 r=4 
+	./Test_bootstrapping_x p=7 noPrint=1
+
+check_ThinBootstrapping: Test_ThinBootstrapping_x 
+	./Test_ThinBootstrapping_x noPrint=1 N=512
+	./Test_ThinBootstrapping_x noPrint=1 N=2300 r=4 
+	./Test_ThinBootstrapping_x p=7 noPrint=1
+
+check_binaryArith: Test_binaryArith_x 
+	./Test_binaryArith_x
+
+check_binaryCompare: Test_binaryCompare_x 
+	./Test_binaryCompare_x
+
+check_tableLookup: Test_tableLookup_x
+	./Test_tableLookup_x
+
+check_Bin_IO: Test_Bin_IO_x
+	./Test_Bin_IO_x p=2 r=2 m=127
+	./Test_Bin_IO_x p=257 m=127
+
+check_approxNums: Test_approxNums_x
+	./Test_approxNums_x m=1024 r=8 ep=0.01
+
+# Run all the test programs with tiny parameters,
+# just to check that they all compile and run.
 test: $(TESTPROGS)
+	./Test_PAlgebra_x m=91
+	./Test_General_x noPrint=1 m=91
+	./Test_matmul_x m=91 gens='[9 3]' ords='[3 -2]'
+	./Test_Permutations_x noPrint=1 m=91
+	./Test_PolyEval_x noPrint=1 m=91
+	./Test_Replicate_x noPrint=1 m=91
+	./Test_EvalMap_x noPrint=1 mvec='[3 35]' gens='[71 76]' ords='[2 2]'
+	./Test_ThinEvalMap_x noPrint=1 mvec='[3 35]' gens='[71 76]' ords='[2 2]'
+	./Test_extractDigits_x noPrint=1 m=91
+	./Test_bootstrapping_x noPrint=1
+	./Test_ThinBootstrapping_x noPrint=1
+	./Test_binaryArith_x prm=0
+	./Test_binaryCompare_x prm=0
+	./Test_tableLookup_x prm=0
+	./Test_IO_x m=91
+	./Test_Bin_IO_x m=91
+	./Test_approxNums_x m=128
+	./Test_Powerful_x m1=3 m2=5 m3=7
+	./Test_intraSlot_x m=91
+	./Test_PtrVector_x
+	./Test_Timing_x m=91 high=1
 
 obj: $(OBJ)
 
-DoubleCRT.o: DoubleCRT.cpp AltCRT.cpp $(HEADER)
-	$(CC) $(CFLAGS) -c DoubleCRT.cpp
 
-%.o: %.cpp $(HEADER)
+#extractDigits.o: extractDigits.cpp
+#	$(CC) $(CFLAGS) -DDEBUG_PRINTOUT -c extractDigits.cpp
+
+#recryption.o: recryption.cpp
+#	$(CC) $(CFLAGS) -DDEBUG_PRINTOUT -c recryption.cpp
+
+
+%.o: %.cpp
 	$(CC) $(CFLAGS) -c $<
 
 fhe.a: $(OBJ)
 	$(AR) $(ARFLAGS) fhe.a $(OBJ)
+	g++ $(INC_GMP) $(INC_NTL) -std=gnu++11 -MM *.cpp > makedep.d
 
 ./%_x: %.cpp fhe.a
 	$(CC) $(CFLAGS) -o $@ $< fhe.a $(LDLIBS)
 
+
 clean:
-	rm -f *.o *_x *_x.exe *.a core.*
+	rm -f *.d *.o *_x *_x.exe *.a core.*
 	rm -rf *.dSYM
 
+# old-style make depend (FIXME: change to modern style?)
+makedep:
+	g++ $(INC_GMP) $(INC_NTL) -std=gnu++11 -MM *.cpp > makedep.d
+
 info:
-	: HElib require NTL version 9.4.0 or higher
+	: HElib require NTL version 10.0.0 or higher
 	: Compilation flags are 'CFLAGS=$(CFLAGS)'
-	: If errors occur, try adding/removing '-std=c++11' in Makefile
+	: If errors occur, try adding '-std=c++11' in Makefile
 	:
+
+

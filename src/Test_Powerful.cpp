@@ -1,6 +1,19 @@
+/* Copyright (C) 2012-2017 IBM Corp.
+ * This program is Licensed under the Apache License, Version 2.0
+ * (the "License"); you may not use this file except in compliance
+ * with the License. You may obtain a copy of the License at
+ *   http://www.apache.org/licenses/LICENSE-2.0
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License. See accompanying LICENSE file.
+ */
 #include "hypercube.h"
 #include "powerful.h"
 #include "FHEContext.h"
+
+NTL_CLIENT
 
 void testSimpleConversion(const Vec<long>& mvec)
 {
@@ -15,14 +28,13 @@ void testSimpleConversion(const Vec<long>& mvec)
   HyperCube<zz_p> cube(pConv.getShortSig());
   pConv.polyToPowerful(cube, poly);
   pConv.powerfulToPoly(poly2, cube);
-  if (poly == poly2) cerr << " simple conversion succeeds\n";
-  else               cerr << " simple conversion failed\n";
+  cout << ((poly == poly2)? "GOOD" : "BAD") << endl;
 }
 
 void testHighLvlConversion(const FHEcontext& context, const Vec<long>& mvec)
 {
   PowerfulDCRT p2d(context, mvec);
-  DoubleCRT dcrt(context);
+  DoubleCRT dcrt(context, context.fullPrimes());
   ZZX poly1, poly2;
   Vec<ZZ> pwrfl1, pwrfl2;
   IndexSet set = dcrt.getIndexSet();
@@ -32,12 +44,11 @@ void testHighLvlConversion(const FHEcontext& context, const Vec<long>& mvec)
 
   p2d.dcrtToPowerful(pwrfl1, dcrt);
   p2d.ZZXtoPowerful(pwrfl2, poly1, set);
-  if (pwrfl2 != pwrfl1) cerr << " dcrt->powerful != dcrt->poly->powerful :(\n";
-  else                  cerr << " dcrt->powerful == dcrt->poly->powerful :)\n";
+  cout << ((pwrfl2 != pwrfl1)? "BAD" : "GOOD") << endl;
 
   p2d.powerfulToZZX(poly2,pwrfl2, set);
   if (poly1!=poly2) {
-    cerr << " poly->powerful->poly failed :(\n";
+    cout << "BAD\n";
     long idx;
     for (idx=0; idx <= deg(poly1); idx++) if (poly1[idx]!=poly2[idx]) break;
 
@@ -53,7 +64,7 @@ void testHighLvlConversion(const FHEcontext& context, const Vec<long>& mvec)
       cerr << "(poly1-poly2)%product=" << poly1<<endl;
     else cerr << "poly1=poly2 (mod product)\n";
   }
-  else cerr << " poly->powerful->poly succeeded :)\n";
+  else cout << "GOOD\n";
 }
 
 void usage(char *prog) 

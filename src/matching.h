@@ -1,24 +1,20 @@
-/* Copyright (C) 2012,2013 IBM Corp.
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation; either version 2 of the License, or
- * (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
- * See the GNU General Public License for more details.
- * 
- * You should have received a copy of the GNU General Public License along
- * with this program; if not, write to the Free Software Foundation, Inc.,
- * 59 Temple Place, Suite 330, Boston, MA 02111-1307 USA
+/* Copyright (C) 2012-2017 IBM Corp.
+ * This program is Licensed under the Apache License, Version 2.0
+ * (the "License"); you may not use this file except in compliance
+ * with the License. You may obtain a copy of the License at
+ *   http://www.apache.org/licenses/LICENSE-2.0
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License. See accompanying LICENSE file.
  */
 /**
  * @file matching.h
  * @brief Classes and functions for max-flow in a generic graph
  **/
-#ifndef _MATCHING_H_
-#define _MATCHING_H_
+#ifndef HELIB_MATCHING_H
+#define HELIB_MATCHING_H
 
 #include "NumbTh.h"
 
@@ -30,10 +26,10 @@ public:
   explicit FlowEdge(long c=0, long f=0){capacity=c; flow=f;}
 };
 
-typedef unordered_map<long,FlowEdge> FNeighborList;
+typedef std::unordered_map<long,FlowEdge> FNeighborList;
      // FNeighborList[i]=edge-to-node-i
 
-typedef vector<FNeighborList> FlowGraph;
+typedef std::vector<FNeighborList> FlowGraph;
      // FlowGraph[i][j] is the edge i->j
 
 long maximum_flow(FlowGraph& fg, long src, long sink);
@@ -50,7 +46,7 @@ public:
   {from=f; to=t; label=l; color=c;}
 };
 
-typedef unordered_multimap<long,LabeledEdge> LNeighborList;
+typedef std::unordered_multimap<long,LabeledEdge> LNeighborList;
 
 //! @class LabeledVertex
 //! @brief A generic node in a graph with some labels
@@ -62,11 +58,11 @@ public:
   explicit LabeledVertex(long n, long l=0) {name=n, label=l;}
 
   void addEdge(long nn, long l=0, long c=0) { // allow parallel edges
-    neighbors.insert(pair<long,LabeledEdge>(nn,LabeledEdge(name,nn,l,c)));
+    neighbors.insert(std::pair<long,LabeledEdge>(nn,LabeledEdge(name,nn,l,c)));
   }
   void addNeighbor(long nn, long l=0, long c=0){ // dont insert a parallel edge
     if (neighbors.count(nn)==0)
-      neighbors.insert(pair<long,LabeledEdge>(nn,LabeledEdge(name,nn,l,c)));
+      neighbors.insert(std::pair<long,LabeledEdge>(nn,LabeledEdge(name,nn,l,c)));
   }
 };
 
@@ -76,7 +72,7 @@ class BipartitleGraph {
   void buildFlowGraph(FlowGraph& fg);
 
 public:
-  vector<LabeledVertex> left; //  the right side is implicit
+  std::vector<LabeledVertex> left; //  the right side is implicit
 
   void addEdge(long from, long to, long label, long color=0) {
     for (long sz = left.size(); sz <= from; sz++) // insert nodes if needed
@@ -90,4 +86,4 @@ public:
   void printout();
 };
 
-#endif /* ifdef _MATCHING_H_ */
+#endif // ifndef HELIB_MATCHING_H

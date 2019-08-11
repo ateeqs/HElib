@@ -1,17 +1,13 @@
-/* Copyright (C) 2012,2013 IBM Corp.
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation; either version 2 of the License, or
- * (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
- * See the GNU General Public License for more details.
- * 
- * You should have received a copy of the GNU General Public License along
- * with this program; if not, write to the Free Software Foundation, Inc.,
- * 59 Temple Place, Suite 330, Boston, MA 02111-1307 USA
+/* Copyright (C) 2012-2017 IBM Corp.
+ * This program is Licensed under the Apache License, Version 2.0
+ * (the "License"); you may not use this file except in compliance
+ * with the License. You may obtain a copy of the License at
+ *   http://www.apache.org/licenses/LICENSE-2.0
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License. See accompanying LICENSE file.
  */
 
 /* Test_Timing.cpp - A program that tests the timing of various operations, outputs the results in a comma-separate-value (csv) format.
@@ -20,14 +16,28 @@
 #include <cstdio>
 #include <memory>
 #include <NTL/ZZ.h>
+#include <NTL/BasicThreadPool.h>
 NTL_CLIENT
 
 #include "FHE.h"
 #include "timing.h"
 #include "EncryptedArray.h"
-#include "matrix.h"
+#include "matmul.h"
 #include "replicate.h"
 #include "permutations.h"
+
+// A hack to get this to compile for now
+static long findBaseLevel(const Ctxt& c)
+{
+  return long(c.naturalSize() / 30); // FIXME: replace 30 by something else
+}
+static void modDownToLevel(Ctxt& c, long lvl)
+{
+  double lo = lvl*30; // FIXME: replace 30 by something else
+  IndexSet target =
+    c.getContext().modSizes.getSet4Size(lo, lo+5, c.getPrimeSet(), c.isCKKS());
+  c.bringToSet(target);
+}
 
 // We measure low-level timing at all levels
 class LowLvlTimingData {
@@ -111,12 +121,13 @@ void timeInit(long m, long p, long r, long d, long L, long nTests)
     FHE_NTIMER_START(keyGen);
     FHESecKey secretKey(context);
     const FHEPubKey& publicKey = secretKey;
-    secretKey.GenSecKey(64); // A Hamming-weight-64 secret key
+    secretKey.GenSecKey(); // A +-1/0 secret key
     addSome1DMatrices(secretKey); // compute key-switching matrices
+    addSomeFrbMatrices(secretKey);
     FHE_NTIMER_STOP(keyGen);
 
     ZZX poly;
-    NewPlaintextArray pp(ea);
+    PlaintextArray pp(ea);
     random(ea, pp);
 
     Ctxt cc(publicKey);
@@ -168,7 +179,7 @@ void timeInit(long m, long p, long r, long d, long L, long nTests)
 long rotationAmount(const EncryptedArray& ea, const FHEPubKey& publicKey,
 	       bool onlyWithMatrix)
 {
-  const PAlgebra& pa = ea.getContext().zMStar;
+  const PAlgebra& pa = ea.getPAlgebra();
   long nSlots = pa.getNSlots();
   long r = RandomBnd(nSlots);
   long k = pa.ith_rep(r);
@@ -187,9 +198,9 @@ void timeOps(const EncryptedArray& ea, const FHEPubKey& publicKey, Ctxt& ret,
   // perform operations at a lower level
   long level = td.lvl;
   if (level>0) for (long i=0; i<(long)cc.size(); i++)
-    cc[i].modDownToLevel(level);
+                 modDownToLevel(cc[i], level);
   else {
-    level = cc[0].findBaseLevel();
+    level = findBaseLevel(cc[0]);
     td.lvl = level;
   }
 
@@ -197,7 +208,7 @@ void timeOps(const EncryptedArray& ea, const FHEPubKey& publicKey, Ctxt& ret,
   cerr << "." << std::flush;
   FHE_NTIMER_START(innerProduct);
   innerProduct(ret,cc,cc);
-  ret.modDownToLevel(ret.findBaseLevel());
+  modDownToLevel(ret,findBaseLevel(ret));
   FHE_NTIMER_STOP(innerProduct);
 
   // Multiplication with 2,3 arguments
@@ -206,7 +217,7 @@ void timeOps(const EncryptedArray& ea, const FHEPubKey& publicKey, Ctxt& ret,
     Ctxt c0 = cc[0];
     FHE_NTIMER_START(multiplyBy);
     c0.multiplyBy(cc[1]);
-    c0.modDownToLevel(c0.findBaseLevel());
+    modDownToLevel(c0,findBaseLevel(c0));
     FHE_NTIMER_STOP(multiplyBy);
     ret += c0; // Just so the compiler doesn't optimize it away
   }
@@ -217,7 +228,7 @@ void timeOps(const EncryptedArray& ea, const FHEPubKey& publicKey, Ctxt& ret,
       Ctxt c0 = cc[0];
       FHE_NTIMER_START(multiplyBy2);
       c0.multiplyBy2(cc[1],cc[2]);
-      c0.modDownToLevel(c0.findBaseLevel()); // mod-down if needed
+      modDownToLevel(c0,findBaseLevel(c0)); // mod-down if needed
       FHE_NTIMER_STOP(multiplyBy2);
       ret += c0; // Just so the compiler doesn't optimize it away
     }
@@ -258,7 +269,7 @@ void timeOps(const EncryptedArray& ea, const FHEPubKey& publicKey, Ctxt& ret,
     long k = rotationAmount(ea,publicKey,/*withMatrix=*/true);
     FHE_NTIMER_START(nativeAutomorph);
     c0.smartAutomorph(k);
-    c0.modDownToLevel(c0.findBaseLevel());
+    modDownToLevel(c0,findBaseLevel(c0));
     FHE_NTIMER_STOP(nativeAutomorph);    
     ret += c0; // Just so the compiler doesn't optimize it away
   }
@@ -269,7 +280,7 @@ void timeOps(const EncryptedArray& ea, const FHEPubKey& publicKey, Ctxt& ret,
     long k = rotationAmount(ea,publicKey,/*withMatrix=*/false);
     FHE_NTIMER_START(automorph);
     c0.smartAutomorph(k);
-    c0.modDownToLevel(c0.findBaseLevel()); // mod-down if needed
+    modDownToLevel(c0,findBaseLevel(c0)); // mod-down if needed
     FHE_NTIMER_STOP(automorph);
     ret += c0; // Just so the compiler doesn't optimize it away
   }
@@ -305,60 +316,28 @@ void timeOps(const EncryptedArray& ea, const FHEPubKey& publicKey, Ctxt& ret,
   resetAllTimers();
 }
 
+// Implementation of the various random matrices is found here
+#include "randomMatrices.h"
+/*
+ * Defined in this file are the following class templates:
+ *
+ *   class RandomMatrix: public MatMul1D_derived<type>
+ *   class RandomMultiMatrix: public MatMul1D_derived<type>
+ *   class RandomBlockMatrix: public BlockMatMul1D_derived<type>
+ *   class RandomMultiBlockMatrix: public BlockMatMul1D_derived<type>
+ *   class RandomFullMatrix: public MatMulFull_derived<type>
+ *   class RandomFullBlockMatrix : public BlockMatMulFull_derived<type>
+ *
+ * Each of them has a corresponding build function, namely:
+ *
+ *   MatMul1D* buildRandomMatrix(const EncryptedArray& ea, long dim);
+ *   MatMul1D* buildRandomMultiMatrix(const EncryptedArray& ea, long dim);
+ *   BlockMatMul1D* buildRandomBlockMatrix(const EncryptedArray& ea, long dim);
+ *   BlockMatMul1D* buildRandomMultiBlockMatrix(const EncryptedArray& ea, long dim);
+ *   MatMulFull* buildRandomFullMatrix(EncryptedArray& ea);
+ *   BlockMatMulFull* buildRandomFullBlockMatrix(EncryptedArray& ea);
+ */
 
-template<class type> 
-class RandomMatrix : public  PlaintextMatrixInterface<type> {
-public:
-  PA_INJECT(type) 
-
-private:
-  const EncryptedArray& ea;
-
-  vector< vector< RX > > data;
-
-public:
-  //  ~RandomMatrix() { cerr << "destructor: random matrix\n"; }
-
-  RandomMatrix(const EncryptedArray& _ea) : ea(_ea) { 
-    long n = ea.size();
-    long d = ea.getDegree();
-
-    RBak bak; bak.save(); ea.getContext().alMod.restoreContext();
-
-    data.resize(n);
-    for (long i = 0; i < n; i++) {
-      data[i].resize(n);
-      for (long j = 0; j < n; j++)
-        random(data[i][j], d);
-    }
-  }
-
-  virtual const EncryptedArray& getEA() const {
-    return ea;
-  }
-
-  virtual bool get(RX& out, long i, long j) const {
-    assert(i >= 0 && i < ea.size());
-    assert(j >= 0 && j < ea.size());
-    out = data[i][j];
-    return false;
-  }
-};
-
-PlaintextMatrixBaseInterface *buildRandomMatrix(const EncryptedArray& ea)
-{
-  switch (ea.getContext().alMod.getTag()) {
-    case PA_GF2_tag: {
-      return new RandomMatrix<PA_GF2>(ea);
-    }
-
-    case PA_zz_p_tag: {
-      return new RandomMatrix<PA_zz_p>(ea);
-    }
-
-    default: return 0;
-  }
-}
 
 class ReplicateDummy : public ReplicateHandler {
 public:
@@ -371,14 +350,22 @@ void timeHighLvl(const EncryptedArray& ea, const FHEPubKey& publicKey,
 		 long nTests, HighLvlTimingData& td)
 {
   Ctxt tmp = c[0];
-  tmp.modDownToLevel(td.lvl);
+  modDownToLevel(tmp, td.lvl);
   cerr << "." << std::flush;
-  {
-  shared_ptr<PlaintextMatrixBaseInterface> ptr(buildRandomMatrix(ea));
-  FHE_NTIMER_START(MatMul);
-  mat_mul(ea, tmp, *ptr);      // multiply the ciphertext vector
-  FHE_NTIMER_STOP(MatMul);
-  } // free the pointer
+  std::unique_ptr< MatMulFull > ptr(buildRandomFullMatrix(ea));
+  if (ea.getTag()==PA_GF2_tag) {
+    RandomFullMatrix<PA_GF2>::ExecType mat_exec(*ptr);
+    mat_exec.upgrade();
+    FHE_NTIMER_START(MatMul);
+    mat_exec.mul(tmp);
+    FHE_NTIMER_STOP(MatMul);
+  } else {
+    RandomFullMatrix<PA_zz_p>::ExecType mat_exec(*ptr);
+    mat_exec.upgrade();
+    FHE_NTIMER_START(MatMul);
+    mat_exec.mul(tmp);
+    FHE_NTIMER_STOP(MatMul);
+  }
   ret = tmp;
 
   for (long i=0; i<nTests; i++) {
@@ -386,7 +373,7 @@ void timeHighLvl(const EncryptedArray& ea, const FHEPubKey& publicKey,
     long nSlots = ea.size();
     long r = RandomBnd(nSlots);
     tmp = c[i % c.size()];
-    tmp.modDownToLevel(td.lvl);
+    modDownToLevel(tmp, td.lvl);
     // time rotation
     FHE_NTIMER_START(rotate);
     ea.rotate(tmp, r);
@@ -402,7 +389,7 @@ void timeHighLvl(const EncryptedArray& ea, const FHEPubKey& publicKey,
   cerr << "." << std::flush;
   for (long i=0; i<nTests && i<ea.size(); i++) {
     tmp = c[i % c.size()];
-    tmp.modDownToLevel(td.lvl);
+    modDownToLevel(tmp, td.lvl);
     FHE_NTIMER_START(replicate);
     replicate(ea, tmp, i);
     FHE_NTIMER_STOP(replicate);    
@@ -412,7 +399,7 @@ void timeHighLvl(const EncryptedArray& ea, const FHEPubKey& publicKey,
   cerr << "." << std::flush;
   ReplicateDummy handler;
   tmp = c[1];
-  tmp.modDownToLevel(td.lvl);
+  modDownToLevel(tmp, td.lvl);
   FHE_NTIMER_START(replicateAll);
   replicateAll(ea, tmp, &handler);
   FHE_NTIMER_STOP(replicateAll);
@@ -422,7 +409,7 @@ void timeHighLvl(const EncryptedArray& ea, const FHEPubKey& publicKey,
   Permut pi;
   randomPerm(pi, trees.getSize());
   tmp = c[2];
-  tmp.modDownToLevel(td.lvl);
+  modDownToLevel(tmp, td.lvl);
 
   PermNetwork net;
   FHE_NTIMER_START(permutation);
@@ -460,9 +447,8 @@ void  TimeIt(long m, long p, TimingData& data, bool high=false)
   setTimersOn();
   resetAllTimers();
   long phim = phi_N(m);
-  long L = floor((7.2*phim)/(FHE_pSize* /*cc*/1.33* (110+/*k*/80)));
-  if (L<5) L=5; // Make sure we have at least a few primes
-
+  long L = floor((7.2*phim)/(40 * (110+/*k*/80)));
+  if (L<250) L=250; // Make sure we have at least a few primes
 
   // Initialize a context with r=2,d=1
   auto_timer _init_timer(&_init_timer_4);
@@ -476,7 +462,7 @@ void  TimeIt(long m, long p, TimingData& data, bool high=false)
   FHE_NTIMER_START(keyGen);
   FHESecKey secretKey(context);
   const FHEPubKey& publicKey = secretKey;
-  secretKey.GenSecKey(64); // A Hamming-weight-64 secret key
+  secretKey.GenSecKey(); // A +-1/0 secret key
   addSome1DMatrices(secretKey); // compute key-switching matrices
   FHE_NTIMER_STOP(keyGen);
 
@@ -532,7 +518,7 @@ void  TimeIt(long m, long p, TimingData& data, bool high=false)
   cerr << "#" << std::flush;
 
   ZZX poly;
-  NewPlaintextArray pp(ea);
+  PlaintextArray pp(ea);
   random(ea, pp);
   ea.encode(poly, pp);
 
@@ -569,7 +555,6 @@ void  TimeIt(long m, long p, TimingData& data, bool high=false)
     // Get the generator-tree structures and the corresponding hypercube
     GeneratorTrees trees;
     trees.buildOptimalTrees(vec, /*widthBound=*/7);
-    //  cout << " cost =" << cost << endl;
 
     // build network for a random permutation, for the sole purpose
     // of adding key-switching matrices
@@ -626,6 +611,8 @@ void usage(char *prog)
   cerr << "          18631,20485,21845, 49981,53261       }\n";
   cerr << "  p is the plaintext base [default=2]" << endl;
   cerr << "  high=1 will time also high-level procedures [default==0]\n";
+  cerr << "  nthreads defines the NTL Thread Pool size for multi-threaded computations [default==1]\n";
+  cerr << "           do not exceed the number of available cores or SMT threads on your system.\n";
   exit(0);
 }
 
@@ -635,6 +622,7 @@ int main(int argc, char *argv[])
   argmap["p"] = "2";
   argmap["m"] = "0";
   argmap["high"] = "0";
+  argmap["nthreads"] = "1";
 
   // get parameters from the command line
   if (!parseArgs(argc, argv, argmap)) usage(argv[0]);
@@ -642,10 +630,14 @@ int main(int argc, char *argv[])
   long p = atoi(argmap["p"]);
   long m = atoi(argmap["m"]);
   long high = atoi(argmap["high"]);
+  long nthreads = atoi(argmap["nthreads"]);
 
 #define numTests 11
   long ms[numTests] = { 4051, 4369, 4859, 10261,11023,11441,
 		 18631,20485,21845, 49981,53261};
+
+  // set NTL Thread pool size
+  if (nthreads>1) NTL::SetNumThreads(nthreads);
 
   cout << "p,m,phim,nSlots,init(p),init(p^2),keyGen,encode(F_p),encode(F_p^d),encode(Z_p^r),encode(R_(p^r)^d),encrypt,decrypt,decode(p),decode(p^2),level,addConst,add,multConst,mult,mult2,autoNative,autoTypical,inProd10";
   if (high) cout << ",rotate,shift,permute,matmul,replicate,replAll\n";

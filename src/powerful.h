@@ -1,25 +1,22 @@
-/* Copyright (C) 2012,2013 IBM Corp.
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation; either version 2 of the License, or
- * (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
- * See the GNU General Public License for more details.
- * 
- * You should have received a copy of the GNU General Public License along
- * with this program; if not, write to the Free Software Foundation, Inc.,
- * 59 Temple Place, Suite 330, Boston, MA 02111-1307 USA
+/* Copyright (C) 2012-2017 IBM Corp.
+ * This program is Licensed under the Apache License, Version 2.0
+ * (the "License"); you may not use this file except in compliance
+ * with the License. You may obtain a copy of the License at
+ *   http://www.apache.org/licenses/LICENSE-2.0
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License. See accompanying LICENSE file.
  */
+#ifndef HELIB_POWERFUL_H
+#define HELIB_POWERFUL_H
 /**
  * @file powerful.h
  * @brief The "powerful basis" of a cyclotomic ring
  **/
-
 #include "NumbTh.h"
-#include "cloned_ptr.h"
+#include "clonedPtr.h"
 #include "bluestein.h"
 #include "hypercube.h"
 #include "DoubleCRT.h"
@@ -31,22 +28,22 @@ class PowerfulTranslationIndexes {
  public:
   long m;     // product of mi's
   long phim;  // phi(m) = product of phi(mi)'s
-  Vec<long> mvec;   // mvec[i] = mi
-  Vec<long> phivec; // phivec[i] = phi(mi)
-  Vec<long> divvec; // divvec[i] = m/mi
-  Vec<long> invvec; // invvec[i] = (m/mi)^{-1} mod mi
+  NTL::Vec<long> mvec;   // mvec[i] = mi
+  NTL::Vec<long> phivec; // phivec[i] = phi(mi)
+  NTL::Vec<long> divvec; // divvec[i] = m/mi
+  NTL::Vec<long> invvec; // invvec[i] = (m/mi)^{-1} mod mi
 
   CubeSignature longSig;  // hypercube of dimensions mi
   CubeSignature shortSig; // hypercube of dimensions phi(mi)
 
-  Vec<long> polyToCubeMap; // index translation tables
-  Vec<long> cubeToPolyMap;
-  Vec<long> shortToLongMap;
+  NTL::Vec<long> polyToCubeMap; // index translation tables
+  NTL::Vec<long> cubeToPolyMap;
+  NTL::Vec<long> shortToLongMap;
 
-  Vec<ZZX> cycVec; // cycvec[i] = Phi_mi(X)
-  ZZX phimX;
+  NTL::Vec<NTL::ZZX> cycVec; // cycvec[i] = Phi_mi(X)
+  NTL::ZZX phimX;
 
-  PowerfulTranslationIndexes(const Vec<long>& mv);
+  PowerfulTranslationIndexes(const NTL::Vec<long>& mv);
 };
 
 /**
@@ -82,9 +79,9 @@ class PowerfulTranslationIndexes {
  **/
 class PowerfulConversion {
   const PowerfulTranslationIndexes* indexes;
-  zz_pContext zzpContext;
-  Vec<zz_pXModulus> cycVec_p; // cycvec[i] = Phi_mi(X)
-  zz_pXModulus phimX_p;
+  NTL::zz_pContext zzpContext;
+  NTL::Vec<NTL::zz_pXModulus> cycVec_p; // cycvec[i] = Phi_mi(X)
+  NTL::zz_pXModulus phimX_p;
 
 public:
 
@@ -101,9 +98,9 @@ public:
     cycVec_p.SetLength(ind.cycVec.length());
     zzpContext.save(); // store the current modulus
     for (long i=0; i<ind.cycVec.length(); i++) {
-      cycVec_p[i] = conv<zz_pX>(ind.cycVec[i]); // convert to zz_pXModulus
+      cycVec_p[i] = NTL::conv<NTL::zz_pX>(ind.cycVec[i]); // convert to zz_pXModulus
     }
-    phimX_p = conv<zz_pX>(ind.phimX); // convert to zz_pXModulus
+    phimX_p = NTL::conv<NTL::zz_pX>(ind.phimX); // convert to zz_pXModulus
   }
 
   void restoreModulus() const { zzpContext.restore(); }
@@ -112,8 +109,8 @@ public:
 
   //! The conversion routines return the value of the modulus q.
   //! It is assumed that the modulus is already set before calling them
-  long powerfulToPoly(zz_pX& poly, const HyperCube<zz_p>& powerful) const;
-  long polyToPowerful(HyperCube<zz_p>& powerful, const zz_pX& poly) const;
+  long powerfulToPoly(NTL::zz_pX& poly, const HyperCube<NTL::zz_p>& powerful) const;
+  long polyToPowerful(HyperCube<NTL::zz_p>& powerful, const NTL::zz_pX& poly) const;
 };
 
 /**
@@ -126,24 +123,24 @@ class PowerfulDCRT {
   PowerfulTranslationIndexes indexes; // modulus-independent tables
 
   // a vector of PowerfulConversion tables, one for each modulus in the chain
-  Vec<PowerfulConversion> pConvVec;
+  NTL::Vec<PowerfulConversion> pConvVec;
 
 public:
-  PowerfulDCRT(const FHEcontext& _context, const Vec<long>& mvec);
+  PowerfulDCRT(const FHEcontext& _context, const NTL::Vec<long>& mvec);
 
   const PowerfulTranslationIndexes& getIndexTranslation() const
   { return indexes; }
   const PowerfulConversion& getPConv(long i) const
   { return pConvVec.at(i); }
 
-  void dcrtToPowerful(Vec<ZZ>& powerful, const DoubleCRT& dcrt) const;
-  void powerfulToDCRT(DoubleCRT& dcrt, const Vec<ZZ>& powerful) const;
+  void dcrtToPowerful(NTL::Vec<NTL::ZZ>& powerful, const DoubleCRT& dcrt) const;
+  void powerfulToDCRT(DoubleCRT& dcrt, const NTL::Vec<NTL::ZZ>& powerful) const;
 
   // If the IndexSet is omitted, default to all the primes in the chain
-  void ZZXtoPowerful(Vec<ZZ>& powerful, const ZZX& poly,
-		     IndexSet s=IndexSet::emptySet()    ) const;
-  void powerfulToZZX(ZZX& poly, const Vec<ZZ>& powerful,
-		     IndexSet s=IndexSet::emptySet()    ) const;
+  void ZZXtoPowerful(NTL::Vec<NTL::ZZ>& powerful, const NTL::ZZX& poly,
+		     IndexSet s=IndexSet::emptySet()) const;
+  void powerfulToZZX(NTL::ZZX& poly, const NTL::Vec<NTL::ZZ>& powerful,
+		     IndexSet s=IndexSet::emptySet()) const;
 };
 
 
@@ -400,3 +397,5 @@ void recursiveInterp(const CubeSlice<zz_p>& s,
 void interp(HyperCube<zz_p>& cube,
 	    const Vec< copied_ptr<FFTHelper> >& multiEvalPoints);
 #endif
+
+#endif // ifndef HELIB_POWERFUL_H

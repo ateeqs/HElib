@@ -1,17 +1,13 @@
-/* Copyright (C) 2012,2013 IBM Corp.
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation; either version 2 of the License, or
- * (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
- * See the GNU General Public License for more details.
- * 
- * You should have received a copy of the GNU General Public License along
- * with this program; if not, write to the Free Software Foundation, Inc.,
- * 59 Temple Place, Suite 330, Boston, MA 02111-1307 USA
+/* Copyright (C) 2012-2017 IBM Corp.
+ * This program is Licensed under the Apache License, Version 2.0
+ * (the "License"); you may not use this file except in compliance
+ * with the License. You may obtain a copy of the License at
+ *   http://www.apache.org/licenses/LICENSE-2.0
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License. See accompanying LICENSE file.
  */
 /* CModulus.cpp - supports forward and backward length-m FFT transformations
  *
@@ -28,13 +24,10 @@
  * (vec_long), that store only the evaluation in primitive m-th
  * roots of unity.
  */
-
 #include "CModulus.h"
 #include "timing.h"
 
-#include "FHEContext.h"
-// needed to get ALT_CRT
-
+NTL_CLIENT
 
 // It is assumed that m,q,context, and root are already set. If root is set
 // to zero, it will be computed by the compRoots() method. Then rInv is
@@ -53,7 +46,8 @@ zz_pContext BuildContext(long p, long maxroot) {
 // If q == 0, then the current context is used
 Cmodulus::Cmodulus(const PAlgebra &zms, long qq, long rt)
 {
-  assert(zms.getM()>1);
+  //OLD: assert(zms.getM()>1);
+  helib::assertTrue<helib::InvalidArgument>(zms.getM()>1, "Bad Z_m^* modulus m (must be greater than 1)");
   bool explicitModulus = true;
 
   if (qq == 0) {
@@ -62,6 +56,8 @@ Cmodulus::Cmodulus(const PAlgebra &zms, long qq, long rt)
   }
   else
     q = qq;
+
+  qinv = PrepMulMod(q);
 
   zMStar = &zms;
   root = rt;
@@ -72,10 +68,12 @@ Cmodulus::Cmodulus(const PAlgebra &zms, long qq, long rt)
 
   zz_pBak bak; 
 
-  if (!ALT_CRT && zms.getPow2()) {
+  if (zms.getPow2()) {
     // special case when m is a power of 2
 
-    assert( explicitModulus );
+    //OLD: assert( explicitModulus );
+    helib::assertTrue(explicitModulus, "bad non explicit q value (cannot be non explicit when m is a power of 2)");
+  
     bak.save();
 
     RandomState state;  SetSeed(conv<ZZ>("84547180875373941534287406458029"));
@@ -92,6 +90,16 @@ Cmodulus::Cmodulus(const PAlgebra &zms, long qq, long rt)
 
     long k = zms.getPow2();
     long phim = 1L << (k-1); 
+
+    //OLD: assert(k <= zz_pInfo->MaxRoot);
+    helib::assertTrue(k <= zz_pInfo->MaxRoot, "Roots count exceeds maximum rootTables size (m = 2^k && k > zz_pInfo->Maxroot && rootTables are 0..zz_pInfo->Maxroot)");
+    // rootTables get initialized 0..zz_pInfo->Maxroot
+
+#ifdef FHE_OPENCL
+    altFFTInfo = MakeSmart<AltFFTPrimeInfo>();
+    InitAltFFTPrimeInfo(*altFFTInfo, *zz_pInfo->p_info, k-1);
+#endif
+
     long w0 = zz_pInfo->p_info->RootTable[0][k];
     long w1 = zz_pInfo->p_info->RootTable[1][k];
 
@@ -110,13 +118,15 @@ Cmodulus::Cmodulus(const PAlgebra &zms, long qq, long rt)
       ipowers_aux[i] = PrepMulModPrecon(w, q);
       w = MulMod(w, w1, q);
     }
+
   
     return;
   }
 
   if (explicitModulus) {
     bak.save(); // backup the current modulus
-    context = BuildContext(q, NextPowerOfTwo(zms.getM()) + 1);
+    context = BuildContext(q, zms.fftSizeNeeded());
+    // fftSizeNeeded() returns next power of 2 after 2m
     context.restore();       // set NTL's current modulus to q
   }
   else
@@ -124,10 +134,19 @@ Cmodulus::Cmodulus(const PAlgebra &zms, long qq, long rt)
 
   if (root==0) { // Find a 2m-th root of unity modulo q, if not given
     zz_p rtp;
-    long e = 2*zms.getM();
+    long m = zms.getM();
+    long e;
+    if (m % 2 == 0)
+      e = 2*m;
+    else
+      e = m; 
+    // for odd m, we can use a primitive m'th roots of unity,
+    // which will facilitate the use of a truncated FFT
+    // in the Bluestein FFT implementation
+    
     FindPrimitiveRoot(rtp,e); // NTL routine, relative to current modulus
     if (rtp==0) // sanity check
-      Error("Cmod::compRoots(): no 2m'th roots of unity mod q");
+      throw helib::RuntimeError("Cmod::compRoots(): no 2m'th roots of unity mod q");
     root = rep(rtp);
   }
   rInv = InvMod(root,q); // set rInv = root^{-1} mod q
@@ -154,6 +173,7 @@ Cmodulus& Cmodulus::operator=(const Cmodulus &other)
 
   zMStar  =  other.zMStar; // Yes, really copy this pointer
   q       = other.q;
+  qinv    = other.qinv;
   m_inv   = other.m_inv;
 
   context = other.context;
@@ -181,24 +201,160 @@ Cmodulus& Cmodulus::operator=(const Cmodulus &other)
   iRb = other.iRb;
   phimx = other.phimx;
 
+#ifdef FHE_OPENCL
+  altFFTInfo = other.altFFTInfo;
+#endif
+
 
 
   return *this;
 }
 
 
-void Cmodulus::FFT(vec_long &y, const ZZX& x) const
+//==================================================================
+// Starting with NTL 11.1.0, the NTL FFT routines do not do any bit reversal.
+// Specificall, FFTFwd leaves its outputs bit reversed, and FFTInv1
+// requires that its inputs are already bit reversed.
+// These low-level routines are only used when m is a power of two.
+// As a work-around, we borrow NTL's old bit reversal code,
+// but only when NTL_PROVIDES_TRUNC_FFT is defined (this macro is defined
+// in the newer versions of NTL that do not do the bit reversal).
+// So this HElib code should be compatible with NTL versions both before
+// and after version 11.1.0.
+
+#ifdef NTL_PROVIDES_TRUNC_FFT
+
+static
+long RevInc(long a, long k)
 {
-  FHE_TIMER_START;
-  zz_pBak bak; bak.save();
-  context.restore();
+   long j, m;
 
-  zz_pX& tmp = Cmodulus::getScratch_zz_pX();
-  { FHE_NTIMER_START(FFT_remainder);
-    conv(tmp,x);      // convert input to zpx format
-  }
+   j = k;
+   m = 1L << (k-1);
 
-  if (!ALT_CRT && zMStar->getPow2()) {
+   while (j && (m & a)) {
+      a ^= m;
+      m >>= 1;
+      j--;
+   }
+   if (j) a ^= m;
+   return a;
+}
+
+
+
+// FIXME: This could potentially be shared across threads, using
+// a "lazy table".
+static inline
+Vec<long> *get_brc_mem()
+{
+   NTL_TLS_LOCAL_INIT(Vec< Vec<long> >, brc_mem_vec, (INIT_SIZE, NTL_FFTMaxRoot+1));
+   return brc_mem_vec.elts();
+}
+
+
+#define NTL_BRC_THRESH (11)
+#define NTL_BRC_Q (5)
+
+// Must have NTL_BRC_THRESH >= 2*NTL_BRC_Q
+// Should also have (1L << (2*NTL_BRC_Q)) small enough
+// so that we can fit that many long's into the cache
+
+
+static
+long *BRC_init(long k)
+{
+   Vec<long> *brc_mem = get_brc_mem();
+
+   long n = (1L << k);
+   brc_mem[k].SetLength(n);
+   long *rev = brc_mem[k].elts();
+   long i, j;
+   for (i = 0, j = 0; i < n; i++, j = RevInc(j, k))
+      rev[i] = j;
+   return rev;
+}
+
+
+static
+void BasicBitReverseCopy(long * NTL_RESTRICT B, 
+                         const long * NTL_RESTRICT A, long k)
+{
+   Vec<long> *brc_mem = get_brc_mem();
+
+   long n = 1L << k;
+   long* NTL_RESTRICT rev;
+   long i, j;
+
+   rev = brc_mem[k].elts();
+   if (!rev) rev = BRC_init(k);
+
+   for (i = 0; i < n; i++)
+      B[rev[i]] = A[i];
+}
+
+
+
+static
+void COBRA(long * NTL_RESTRICT B, const long * NTL_RESTRICT A, long k)
+{
+   Vec<long> *brc_mem = get_brc_mem();
+
+   NTL_TLS_LOCAL(Vec<long>, BRC_temp);
+
+   long q = NTL_BRC_Q;
+   long k1 = k - 2*q;
+   long * NTL_RESTRICT rev_k1, * NTL_RESTRICT rev_q;
+   long *NTL_RESTRICT T;
+   long a, b, c, a1, b1, c1;
+   long i, j;
+
+   rev_k1 = brc_mem[k1].elts();
+   if (!rev_k1) rev_k1 = BRC_init(k1);
+
+   rev_q = brc_mem[q].elts();
+   if (!rev_q) rev_q = BRC_init(q);
+
+   T = BRC_temp.elts();
+   if (!T) {
+      BRC_temp.SetLength(1L << (2*q));
+      T = BRC_temp.elts();
+   }
+
+   for (b = 0; b < (1L << k1); b++) {
+      b1 = rev_k1[b]; 
+      for (a = 0; a < (1L << q); a++) {
+         a1 = rev_q[a]; 
+         for (c = 0; c < (1L << q); c++) 
+            T[(a1 << q) + c] = A[(a << (k1+q)) + (b << q) + c]; 
+      }
+
+      for (c = 0; c < (1L << q); c++) {
+         c1 = rev_q[c];
+         for (a1 = 0; a1 < (1L << q); a1++) 
+            B[(c1 << (k1+q)) + (b1 << q) + a1] = T[(a1 << q) + c];
+      }
+   }
+}
+
+static
+void BitReverseCopy(long * NTL_RESTRICT B, const long * NTL_RESTRICT A, long k)
+{
+   if (k <= NTL_BRC_THRESH) 
+      BasicBitReverseCopy(B, A, k);
+   else
+      COBRA(B, A, k);
+}
+#endif
+
+//================================================
+
+
+
+void Cmodulus::FFT_aux(vec_long &y, zz_pX& tmp) const
+{
+
+  if (zMStar->getPow2()) {
     // special case when m is a power of 2
 
     long k = zMStar->getPow2();
@@ -219,7 +375,30 @@ void Cmodulus::FFT(vec_long &y, const ZZX& x) const
     for (long i = dx+1; i < phim; i++)
       yp[i] = 0;
 
+#ifdef FHE_OPENCL
+    AltFFTFwd(yp, yp, k-1, *altFFTInfo);
+#else
+
+#ifndef NTL_PROVIDES_TRUNC_FFT
     FFTFwd(yp, yp, k-1, *zz_pInfo->p_info);
+#else
+
+    FFTFwd(yp, yp, k-1, *zz_pInfo->p_info);
+    // Now we have to bit reverse the result
+    // The BitReverseCopy routine does not allow aliasing, so
+    // we have to do an extra copy here.
+    // We use the fact tmp1 and y do not alias.
+
+    vec_long& tmp1 = Cmodulus::getScratch_vec_long();
+    tmp1.SetLength(phim);
+    long *tmp1_p = tmp1.elts();
+
+    BitReverseCopy(tmp1_p, yp, k-1);
+    for (long i = 0; i < phim; i++) yp[i] = tmp1_p[i];
+
+#endif
+
+#endif
 
     return;
   }
@@ -240,13 +419,43 @@ void Cmodulus::FFT(vec_long &y, const ZZX& x) const
 }
 
 
+void Cmodulus::FFT(vec_long &y, const ZZX& x) const
+{
+  FHE_TIMER_START;
+  zz_pBak bak; bak.save();
+  context.restore();
+
+  zz_pX& tmp = Cmodulus::getScratch_zz_pX();
+  { FHE_NTIMER_START(FFT_remainder);
+    convert(tmp,x);      // convert input to zpx format
+  }
+
+  FFT_aux(y, tmp);
+};
+
+void Cmodulus::FFT(vec_long &y, const zzX& x) const
+{
+  FHE_TIMER_START;
+  zz_pBak bak; bak.save();
+  context.restore();
+
+  zz_pX& tmp = Cmodulus::getScratch_zz_pX();
+  { FHE_NTIMER_START(FFT_remainder);
+    convert(tmp,x);      // convert input to zpx format
+  }
+
+  FFT_aux(y, tmp);
+};
+
+
+
 void Cmodulus::iFFT(zz_pX &x, const vec_long& y)const
 {
   FHE_TIMER_START;
   zz_pBak bak; bak.save();
   context.restore();
 
-  if (!ALT_CRT && zMStar->getPow2()) {
+  if (zMStar->getPow2()) {
     // special case when m is a power of 2
 
     long k = zMStar->getPow2();
@@ -262,7 +471,22 @@ void Cmodulus::iFFT(zz_pX &x, const vec_long& y)const
     tmp.SetLength(phim);
     long *tmp_p = tmp.elts();
 
+#ifdef FHE_OPENCL
+    AltFFTRev1(tmp_p, yp, k-1, *altFFTInfo);
+#else
+
+#ifndef NTL_PROVIDES_TRUNC_FFT
     FFTRev1(tmp_p, yp, k-1, *zz_pInfo->p_info);
+#else
+    // We have to bit reverse the inputs to FFTRev1
+    // The BitReverseCopy routine does not allow aliasing.
+    // We use the fact that y and tmp do not alias
+
+    BitReverseCopy(tmp_p, yp, k-1);
+    FFTRev1(tmp_p, tmp_p, k-1, *zz_pInfo->p_info);
+#endif
+
+#endif
 
     x.rep.SetLength(phim);
     zz_p *xp = x.rep.elts();

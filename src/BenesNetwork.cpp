@@ -1,17 +1,13 @@
-/* Copyright (C) 2012,2013 IBM Corp.
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation; either version 2 of the License, or
- * (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
- * See the GNU General Public License for more details.
- * 
- * You should have received a copy of the GNU General Public License along
- * with this program; if not, write to the Free Software Foundation, Inc.,
- * 59 Temple Place, Suite 330, Boston, MA 02111-1307 USA
+/* Copyright (C) 2012-2017 IBM Corp.
+ * This program is Licensed under the Apache License, Version 2.0
+ * (the "License"); you may not use this file except in compliance
+ * with the License. You may obtain a copy of the License at
+ *   http://www.apache.org/licenses/LICENSE-2.0
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License. See accompanying LICENSE file.
  */
 #include <NTL/lzz_pXFactoring.h>
 NTL_CLIENT
@@ -19,7 +15,6 @@ NTL_CLIENT
 #include "EncryptedArray.h"
 
 #include <cstdlib>
-#include <cassert>
 #include <list>
 #include <sstream>
 
@@ -76,7 +71,9 @@ recursiveGeneralBenesInit(long n, long k, long d, long delta_j,
   long sz0 = GeneralBenesNetwork::shamt(n, k, d); // size of upper internal network
   long sz1 = sz - sz0;
 
-  assert(labs(sz0-sz1) <= 1);
+  //OLD: assert(labs(sz0-sz1) <= 1);
+  // TODO: why not just labs(sz)?
+  helib::assertTrue(labs(sz0-sz1) <= 1l, "sz1 must be within 1 of sz0");
 
   // id_perm: the identity permutation on {0,...,sz-1}
   Permut id_perm;
@@ -260,7 +257,8 @@ GeneralBenesNetwork::GeneralBenesNetwork(const Permut& perm)
   n = perm.length();
 
   // check that n > 1
-  assert(n > 1);
+  //OLD: assert(n > 1);
+  helib::assertTrue<helib::InvalidArgument>(n > 1l, "permutation length must be greater than one");
 
   // compute recursion depth k = least integer k s/t 2^k >= n
   k = GeneralBenesNetwork::depth(n);
@@ -276,13 +274,16 @@ GeneralBenesNetwork::GeneralBenesNetwork(const Permut& perm)
 
   for (long j = 0; j < n; j++) {
     long j1 = perm[j];
-    assert(j1 >= 0 && j1 < n);
+    //OLD: assert(j1 >= 0 && j1 < n);
+    helib::assertInRange(j1, 0l, n, "permutation element out of range");
     iperm[j1] = j;
   }
 
 
-  for (long j = 0; j < n; j++)
-    assert(iperm[j] != -1);
+  for (long j = 0; j < n; j++) {
+    //OLD: assert(iperm[j] != -1);
+    helib::assertTrue(iperm[j] == -1l, "permutation element not processed");
+  }
 
   // allocate space for the levels graph
 
